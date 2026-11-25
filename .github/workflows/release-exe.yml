@@ -17,10 +17,14 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt pyinstaller
       - run: pyinstaller jobscout.spec
+      - run: pyinstaller jobscout_uninstaller.spec
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/JobScout.exe
+          files: |
+            dist/JobScout.exe
+            dist/JobScoutUninstaller.exe
           fail_on_unmatched_files: true
           body: |
-            Portable one-file build for Windows x64: double-click and open http://127.0.0.1:8765 — your data lives in a `data` folder next to the exe.
+            Portable one-file build for Windows x64: double-click `JobScout.exe` and the JobScout window opens — your data lives in a `data` folder next to the exe, and a desktop shortcut is created on first launch.
+            To uninstall: place `JobScoutUninstaller.exe` next to `JobScout.exe` and run it — it deletes everything (app, data, saved keys), and nothing is kept.
             Unsigned: SmartScreen may warn "unknown publisher" (More info → Run anyway). All processing is local; nothing leaves your machine unless you add API keys.
