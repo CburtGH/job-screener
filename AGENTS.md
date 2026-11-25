@@ -32,11 +32,11 @@ Stack:
    | production | clone of `main`, e.g. `C:\Projects\job-screener` | `main` | 8765 | JobScout (blue icon) |
    | staging | git worktree, e.g. `C:\Projects\job-screener-staging` | `staging` | 8766 | JobScout (Staging) (orange) |
 
-   - Remotes: `origin` = `CburtGH/job-screener` (the future **public** repo: keep only `main` there),
-     `dev` = `CburtGH/job-screener-dev` (private: carries `staging` and all dev history). The staging
-     worktree's `staging` branch tracks `dev/staging`.
-   - Make every change in the **staging** folder, then commit and push to `dev/staging`. Never push a
-     `staging` branch to `origin` - if `job-screener` is ever made public, every branch on it would be public too.
+   - Remotes: `origin` = the public GitHub repository (**`main` only** — never push other branches or
+     tags that aren't releases). Daily work lives on the local `staging` branch, backed by the
+     maintainer's private remote; the branch's name/URL is not referenced here.
+   - Make every change in the **staging** folder, then commit and push to the maintainer's private
+     remote. Never push a `staging` branch to `origin` except as the short-lived head of the PR below.
    - Never edit, commit or push in the production folder, and never push to `main`.
    - The user tests in the staging app. Only after they explicitly approve: open a PR `staging` → `main`
      (`git push origin staging`, then `gh pr create --base main --head staging`), merge it, delete the
