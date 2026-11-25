@@ -1254,6 +1254,7 @@ async function openWizard() {
     ? "saved (type to replace)" : "Anthropic API key (sk-ant-…)";
   wizardGoto(0);
   $("#wizard-dialog").showModal();
+  api("/api/settings/wizard-seen", { method: "POST" }).catch(() => {});
 }
 
 function wWaiBody(wai) {
@@ -1371,6 +1372,7 @@ $$("[data-go]").forEach((el) => el.addEventListener("click", () => goToTarget(el
     await loadSettings();
     S.hasResume = (await api("/api/resumes")).length > 0; renderBanner();
     await loadJobs(); updateMailBadge();
+    if (S.settings.first_run) openWizard(); // new install: guide them through setup before anything else
     // The app does one refresh when it opens. Show its progress, then reload the lists once it's done.
     const s = await updateRunStatus();
     if (s?.running) {
