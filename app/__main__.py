@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from .env import APP_NAME, BUNDLE, ICON, PORT as ENV_PORT, ROOT
+from .env import APP_NAME, BUNDLE, ICON, IS_STAGING, PORT as ENV_PORT, ROOT
 
 PORT = int(os.environ.get("JOBSCOUT_PORT", ENV_PORT))
 URL = f"http://127.0.0.1:{PORT}"
@@ -70,6 +70,24 @@ def _set_window_icon() -> None:
         print(f"icon: {e}")
 
 
+def _ensure_desktop_shortcut() -> None:
+    """JobScout.exe only: put a JobScout icon on the Desktop on first launch (respects
+    OneDrive-redirected Desktops; an existing or renamed shortcut is left alone)."""
+    try:
+        import subprocess
+        exe, folder = sys.executable, str(ROOT)
+        ps = (
+            "$d=[Environment]::GetFolderPath('Desktop'); $l=Join-Path $d 'JobScout.lnk'; "
+            "if (-not (Test-Path $l)) { $s=(New-Object -ComObject WScript.Shell).CreateShortcut($l); "
+            f"$s.TargetPath='{exe}'; $s.WorkingDirectory='{folder}'; $s.IconLocation='{exe},0'; "
+            "$s.Description='JobScout - job-search assistant'; $s.Save() }"
+        )
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       creationflags=0x08000000, timeout=20)  # CREATE_NO_WINDOW
+    except Exception as e:
+        print(f"shortcut: {e}")
+
+
 def main() -> None:
     import uvicorn
     from .main import app as fastapi_app  # object, not "app.main:app": PyInstaller can't follow import strings
@@ -77,6 +95,9 @@ def main() -> None:
     if os.environ.get("JOBSCOUT_HEADLESS") == "1":
         uvicorn.run(fastapi_app, host="127.0.0.1", port=PORT, log_level="info")
         return
+
+    if getattr(sys, "frozen", False) and not IS_STAGING:
+        _ensure_desktop_shortcut()
 
     if _port_in_use():
         _message_box(f"{APP_NAME} is already open. Switch to its window (check the taskbar).")

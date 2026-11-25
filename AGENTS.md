@@ -158,9 +158,11 @@ the Google token, because the token may be a copy of production's.
 | `CLAUDE.md` | Points Claude Code at this file |
 | `.githooks/pre-commit` | Runs the AGENTS.md check before each commit |
 | `.github/workflows/agents-md.yml` | Runs the AGENTS.md check on pushes and PRs |
-| `.github/workflows/release-exe.yml` | On `v*` tags: builds `JobScout.exe` (PyInstaller, windows-latest) and attaches it to the GitHub Release |
+| `.github/workflows/release-exe.yml` | On `v*` tags: builds `JobScout.exe` + `JobScoutUninstaller.exe` (PyInstaller, windows-latest) and attaches both to the GitHub Release |
 | `run_jobscout.py` | PyInstaller entry point (calls `app.__main__.main()`) |
 | `jobscout.spec` | PyInstaller one-file build config (bundles `static/`, collect_all for webview/googleapiclient/keyring/winpty) |
+| `run_uninstaller.py` | Entry for `JobScoutUninstaller.exe`: confirms, kills the app, deletes exe + `data/` + `instance.json` + this env's keyring secrets + `%LOCALAPPDATA%\JobScout\<env>` + desktop shortcut, then self-deletes (nothing survives) |
+| `jobscout_uninstaller.spec` | PyInstaller config for the uninstaller (excludes the heavy app deps) |
 | `.claude/launch.json` | Dev-server configs for Claude Code's preview browser (headless; `jobscout-test` = port 8799, no startup refresh) |
 
 ## Data flow
@@ -502,3 +504,7 @@ schemas, ignores extra keys, skips items outside the task (wrong job/thread id),
   lookups must account for that.
 - `gh` is authenticated; `gh auth setup-git` provides git credentials. The commit identity is set in the repo
   config. Don't change it.
+- Release exes: the frozen `JobScout.exe` creates a `JobScout.lnk` desktop shortcut on first launch (skipped in
+  staging/headless). `JobScoutUninstaller.exe` sits next to the exe and removes everything after one confirmation:
+  the exe, `data/`, `instance.json`, this environment's keyring secrets, `%LOCALAPPDATA%\JobScout\<env>`, the
+  desktop shortcut, and itself. No data may survive an uninstall.

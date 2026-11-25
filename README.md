@@ -52,7 +52,8 @@ outbound traffic is to the job-board APIs and AI/Gmail services you enable.
 Grab **`JobScout.exe`** from the
 [latest release](https://github.com/CburtGH/job-screener/releases/latest), put it in any folder,
 and double-click it. It's a portable one-file build: your data is created in a `data` folder next
-to the exe. Windows SmartScreen may show an "unknown publisher" warning because the build is not
+to the exe, and a **JobScout desktop shortcut** is created automatically on the first launch.
+Windows SmartScreen may show an "unknown publisher" warning because the build is not
 code-signed — click *More info* → *Run anyway* (or just run it from the browser's *Keep* option).
 
 ### Option 2: From GitHub
@@ -84,6 +85,27 @@ First run: the **setup wizard** opens automatically (you can also open it anytim
 
 Gmail is optional: bring your own free OAuth desktop client (the Settings help walks through the
 Google Cloud steps). The app opens locally, stores its database in `data/`, and needs no account.
+
+## Uninstall
+
+> **Warning: uninstalling deletes all your progress and data permanently** — scored jobs, dismissed
+> jobs, resumes and tailored versions, cover letters, settings, saved API keys and Gmail access.
+> Nothing is kept and nothing can be restored afterwards.
+
+**If you installed the exe:**
+
+1. Download **`JobScoutUninstaller.exe`** from the
+   [latest release](https://github.com/CburtGH/job-screener/releases/latest).
+2. Place it in the **same folder as `JobScout.exe`**.
+3. Double-click it and confirm the warning dialog.
+
+It closes the app if running, then deletes the program, its entire `data` folder, your saved keys
+(Windows Credential Manager), the desktop shortcut, local caches — and the uninstaller itself.
+Nothing is left behind.
+
+**If you installed from GitHub:** delete the `job-screener` folder (its `data/` goes with it), then
+remove the stored keys: *Control Panel → Credential Manager → Windows Credentials* → delete the
+`JobScout` entries, and delete `%LOCALAPPDATA%\JobScout` if it exists.
 
 ## License
 
