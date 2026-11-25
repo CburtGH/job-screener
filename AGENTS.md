@@ -158,6 +158,9 @@ the Google token, because the token may be a copy of production's.
 | `CLAUDE.md` | Points Claude Code at this file |
 | `.githooks/pre-commit` | Runs the AGENTS.md check before each commit |
 | `.github/workflows/agents-md.yml` | Runs the AGENTS.md check on pushes and PRs |
+| `.github/workflows/release-exe.yml` | On `v*` tags: builds `JobScout.exe` (PyInstaller, windows-latest) and attaches it to the GitHub Release |
+| `run_jobscout.py` | PyInstaller entry point (calls `app.__main__.main()`) |
+| `jobscout.spec` | PyInstaller one-file build config (bundles `static/`, collect_all for webview/googleapiclient/keyring/winpty) |
 | `.claude/launch.json` | Dev-server configs for Claude Code's preview browser (headless; `jobscout-test` = port 8799, no startup refresh) |
 
 ## Data flow
@@ -228,7 +231,8 @@ All under `/api`. Writes require the `X-JobScout: 1` header.
 |---|---|
 | `GET /api/env` | Environment name, app name, port, icon |
 | `POST /api/env/copy-production` | Staging only: copy production data in |
-| `GET /api/settings` | App settings, preferences, masked secrets, source readiness |
+| `GET /api/settings` | App settings, preferences, masked secrets, source readiness, `first_run` |
+| `POST /api/settings/wizard-seen` | Suppress the first-run setup-wizard auto-open |
 | `PUT /api/settings/app` | Save app settings |
 | `PUT /api/settings/preferences` | Save search preferences |
 | `PUT /api/settings/secrets/{name}` | Save or clear one secret |
@@ -295,8 +299,10 @@ so the handler itself checks Host, Origin (must be localhost/127.0.0.1) and the 
 The Settings tab's subtabs are **Integrations / AI Settings / Profile** (`data-stab` values stay
 `account`/`setup`/`app`); its header has a **Setup wizard** button (`#open-wizard`) that opens the 4-step
 `#wizard-dialog` (`openWizard()` in app.js: About you / Job search / Resume upload / AI engine, pre-filled
-from the current settings; "Finish" PUTs preferences + app settings + any typed keys). The setup-wizard
-demo branch auto-opens the same dialog on every launch instead.
+from the current settings; "Finish" PUTs preferences + app settings + any typed keys). `boot()` also
+auto-opens it once on a genuine first run: `GET /api/settings` returns `first_run` (no `wizard_seen` kv flag,
+no saved secrets on the machine, no resumes, no jobs) and `openWizard()` POSTs `/api/settings/wizard-seen`
+so it never auto-opens again.
 
 **Preferences** (`config.DEFAULT_PREFERENCES`, the Preferences tab): `target_titles`, `title_must_include_any`,
 `title_role_any`, `title_exclude`, `keywords_boost`, `keywords_exclude`, `remote_only`, `locations`, `country`,

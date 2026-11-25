@@ -16,9 +16,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from . import ai, claude_code, config, db, gmail, local_model, logs, monitor, resume, sources
+from . import ai, claude_code, config, db, env, gmail, local_model, logs, monitor, resume, sources
 
-STATIC = Path(__file__).resolve().parent.parent / "static"
+STATIC = env.BUNDLE / "static"
 
 
 @asynccontextmanager
@@ -126,6 +126,18 @@ async def copy_production():
         raise HTTPException(400, str(e))
 
 
+def _first_run() -> bool:
+    """True until the setup wizard has been shown once on a genuinely empty install
+    (no saved keys on this machine, no resume, no jobs) — auto-open trigger for new users."""
+    if db.kv_get("wizard_seen"):
+        return False
+    if any(s["is_set"] for s in config.secrets_status()):
+        return False
+    with db.conn() as c:
+        return not (c.execute("SELECT 1 FROM resumes LIMIT 1").fetchone()
+                    or c.execute("SELECT 1 FROM jobs LIMIT 1").fetchone())
+
+
 @app.get("/api/settings")
 def get_settings():
     return {
@@ -134,7 +146,14 @@ def get_settings():
         "secrets": config.secrets_status(),
         "sources": [{"id": k, "label": v["label"], "needs": v["needs"],
                      "ready": all(config.get_secret(n) for n in v["needs"])} for k, v in sources.SOURCES.items()],
+        "first_run": _first_run(),
     }
+
+
+@app.post("/api/settings/wizard-seen")
+def post_wizard_seen():
+    db.kv_set("wizard_seen", True)
+    return {"ok": True}
 
 
 @app.put("/api/settings/app")

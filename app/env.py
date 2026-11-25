@@ -6,9 +6,15 @@ No file = production. Each environment has its own port, data folder (the checko
 stored keys (separate Credential Manager entries), window title and shortcut.
 """
 import json
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):  # PyInstaller exe: data next to the exe, resources in the bundle
+    ROOT = Path(sys.executable).resolve().parent
+    BUNDLE = Path(getattr(sys, "_MEIPASS", ROOT))
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+    BUNDLE = ROOT
 _INSTANCE = ROOT / "instance.json"
 
 try:

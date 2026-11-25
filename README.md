@@ -45,7 +45,17 @@ outbound traffic is to the job-board APIs and AI/Gmail services you enable.
 - **Windows Credential Manager** (via `keyring`) for secrets; PowerShell scripts for the desktop
   shortcut and built-in model install; log scrubbing/redaction built in.
 
-## Installation (from GitHub)
+## Installation
+
+### Option 1: Download the exe (no Python needed)
+
+Grab **`JobScout.exe`** from the
+[latest release](https://github.com/CburtGH/job-screener/releases/latest), put it in any folder,
+and double-click it. It's a portable one-file build: your data is created in a `data` folder next
+to the exe. Windows SmartScreen may show an "unknown publisher" warning because the build is not
+code-signed — click *More info* → *Run anyway* (or just run it from the browser's *Keep* option).
+
+### Option 2: From GitHub
 
 Requirements: Windows 10/11, [Python 3.12+](https://www.python.org/downloads/) (check *Add to PATH*),
 and [Git](https://git-scm.com/).
@@ -64,7 +74,7 @@ That opens the JobScout window. To get a Desktop/Start-menu shortcut instead:
 powershell -ExecutionPolicy Bypass -File .\install_shortcut.ps1
 ```
 
-First run: open **Settings** (or the **Setup wizard** button) and
+First run: the **setup wizard** opens automatically (you can also open it anytime from **Settings**) —
 
 1. pick an **AI engine** — the built-in local model downloads its runtime and model on first use,
    or point the External engine at your own llama.cpp server, or add an Anthropic API key;

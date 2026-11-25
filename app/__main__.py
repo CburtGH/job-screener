@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from .env import APP_NAME, ICON, PORT as ENV_PORT, ROOT
+from .env import APP_NAME, BUNDLE, ICON, PORT as ENV_PORT, ROOT
 
 PORT = int(os.environ.get("JOBSCOUT_PORT", ENV_PORT))
 URL = f"http://127.0.0.1:{PORT}"
@@ -60,7 +60,7 @@ def _set_window_icon() -> None:
             return True
 
         u.EnumWindows(_each, 0)
-        path = str(ROOT / "static" / f"{ICON}.ico")
+        path = str(BUNDLE / "static" / f"{ICON}.ico")
         for hwnd in found:
             for size, which in ((256, 1), (32, 0)):  # ICON_BIG, ICON_SMALL
                 hicon = u.LoadImageW(None, path, 1, size, size, 0x10)  # IMAGE_ICON, LR_LOADFROMFILE
@@ -72,9 +72,10 @@ def _set_window_icon() -> None:
 
 def main() -> None:
     import uvicorn
+    from .main import app as fastapi_app  # object, not "app.main:app": PyInstaller can't follow import strings
 
     if os.environ.get("JOBSCOUT_HEADLESS") == "1":
-        uvicorn.run("app.main:app", host="127.0.0.1", port=PORT, log_level="info")
+        uvicorn.run(fastapi_app, host="127.0.0.1", port=PORT, log_level="info")
         return
 
     if _port_in_use():
@@ -89,7 +90,7 @@ def main() -> None:
         pass
 
     # Bound to localhost only: the app holds your resume, API keys and Gmail access.
-    server = uvicorn.Server(uvicorn.Config("app.main:app", host="127.0.0.1", port=PORT, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(fastapi_app, host="127.0.0.1", port=PORT, log_level="warning"))
     t = threading.Thread(target=server.run, daemon=True, name="jobscout-server")
     t.start()
     for _ in range(200):
