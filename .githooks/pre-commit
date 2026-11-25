@@ -1,0 +1,8 @@
+#!/bin/sh
+# Blocks commits that leave AGENTS.md out of date with the code.
+# Enabled per clone with:  git config core.hooksPath .githooks   (install_shortcut.ps1 does this)
+root="$(git rev-parse --show-toplevel)"
+if [ -x "$root/.venv/Scripts/python.exe" ]; then py="$root/.venv/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1; then py=python3
+else py=python; fi
+exec "$py" "$root/tools/check_agents_md.py"

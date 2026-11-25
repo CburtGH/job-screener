@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JobScout</title>
+  <link rel="icon" href="/static/icon.png">
+  <link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">JobScout</div>
+    <nav id="tabs">
+      <button data-tab="jobs" class="active">Jobs</button>
+      <button data-tab="mail">Mail <span id="mail-badge" class="count-badge hidden"></span></button>
+      <button data-tab="resume">Resume</button>
+      <button data-tab="prefs">Preferences</button>
+      <button data-tab="settings">Settings</button>
+      <button data-tab="activity">Activity</button>
+    </nav>
+    <div class="run">
+      <span id="run-status" class="muted small"></span>
+      <button id="run-now" class="primary" title="Check job sources and sync Gmail">↻ Refresh</button>
+    </div>
+  </header>
+
+  <div id="setup-banner" class="banner hidden"></div>
+
+  <!-- JOBS -->
+  <main id="tab-jobs" class="tab">
+    <div class="jobs-layout">
+      <section class="job-list-pane">
+        <div class="toolbar">
+          <select id="f-status">
+            <option value="active">Active</option>
+            <option value="new">New</option>
+            <option value="saved">Saved</option>
+            <option value="applying">Applying</option>
+            <option value="applied">Applied</option>
+            <option value="interview">Interview</option>
+            <option value="offer">Offer</option>
+            <option value="low_match">Low match</option>
+            <option value="rejected">Rejected</option>
+            <option value="dismissed">Dismissed</option>
+            <option value="all">All</option>
+          </select>
+          <select id="f-sort">
+            <option value="best">Best match</option>
+            <option value="newest">Newest found</option>
+            <option value="posted">Newest posted</option>
+          </select>
+          <input id="f-q" type="search" placeholder="Search title, company, text">
+          <label class="check small" title="Hidden and dismissed jobs"><input type="checkbox" id="f-hidden"> Show hidden <span id="hidden-count" class="muted"></span></label>
+        </div>
+        <div class="toolbar">
+          <button id="add-job">+ Add a job</button>
+          <button id="score-batch" class="primary hidden" title="Scores every new job the AI hasn't scored yet (Claude Code: one capped session)">✨ Score new jobs with the AI Agent</button>
+          <span class="muted small">Search in your browser:</span>
+          <a class="link-btn" data-site="indeed" href="https://www.indeed.com/" target="_blank" rel="noopener noreferrer">Indeed ↗</a>
+          <a class="link-btn" data-site="ziprecruiter" href="https://www.ziprecruiter.com/" target="_blank" rel="noopener noreferrer">ZipRecruiter ↗</a>
+          <a class="link-btn" data-site="linkedin" href="https://www.linkedin.com/jobs/" target="_blank" rel="noopener noreferrer">LinkedIn ↗</a>
+        </div>
+        <div id="counts" class="counts small muted"></div>
+        <ul id="job-list" class="job-list"></ul>
+      </section>
+      <section id="job-detail" class="job-detail-pane">
+        <div class="empty muted">Select a job to see details, tailor your resume and write a cover letter.</div>
+      </section>
+    </div>
+  </main>
+
+  <!-- MAIL -->
+  <main id="tab-mail" class="tab hidden">
+    <div id="mail-setup" class="card hidden">
+      <h2>Connect Gmail</h2>
+      <p>Connect Gmail to see recruiter replies, interview invites and rejections next to your jobs, and to reply or send outreach from here.</p>
+      <button class="primary" data-go="settings">Set up Gmail in Settings</button>
+    </div>
+    <div id="mail-main" class="jobs-layout">
+      <section class="job-list-pane">
+        <div class="toolbar">
+          <select id="m-view">
+            <option value="all">All job mail</option>
+            <option value="needs_reply">Needs reply</option>
+            <option value="unread">Unread</option>
+            <option value="inbox">In inbox</option>
+            <option value="linked">Linked to a job</option>
+            <option value="interview">Interviews</option>
+            <option value="assessment">Assessments</option>
+            <option value="offer">Offers</option>
+            <option value="rejection">Rejections</option>
+            <option value="application_received">Application received</option>
+            <option value="recruiter_outreach">Recruiter outreach</option>
+            <option value="outreach">My outreach</option>
+          </select>
+          <input id="m-q" type="search" placeholder="Search subject, sender">
+        </div>
+        <div class="toolbar">
+          <button id="m-compose" class="primary">✉ New email</button>
+          <button id="sort-batch" class="hidden" title="Opens Claude Code on your Claude plan to sort new conversations">✨ Sort email with the AI Agent</button>
+          <span id="m-account" class="small muted"></span>
+        </div>
+        <ul id="thread-list" class="job-list"></ul>
+      </section>
+      <section id="thread-detail" class="job-detail-pane">
+        <div class="empty muted">Select a conversation.</div>
+      </section>
+    </div>
+  </main>
+
+  <!-- RESUME -->
+  <main id="tab-resume" class="tab hidden">
+    <div class="resume-layout">
+      <aside class="card">
+        <h3>Your resumes</h3>
+        <ul id="resume-list" class="plain-list"></ul>
+        <button id="resume-new">+ New blank resume</button>
+        <hr>
+        <h3>Upload</h3>
+        <form id="resume-upload">
+          <input type="file" name="file" accept=".pdf,.docx,.txt,.md" required>
+          <input type="text" name="name" placeholder="Name (optional)">
+          <label class="check"><input type="checkbox" name="cleanup"> <span id="cleanup-label">Clean up formatting with the AI Agent</span></label>
+          <label class="check"><input type="checkbox" name="make_master"> Make this my master resume</label>
+          <button class="primary" type="submit">Upload</button>
+        </form>
+        <p class="small muted">The <b>master</b> resume is what jobs are scored against and what tailored versions start from. Tailored copies are saved on each job, never over your master.</p>
+      </aside>
+      <section class="card resume-editor">
+        <div class="toolbar">
+          <input id="resume-name" type="text" placeholder="Resume name">
+          <span id="resume-master-badge" class="badge hidden">Master</span>
+          <span class="spacer"></span>
+          <button id="resume-toggle">Preview</button>
+          <button id="resume-cleanup" title="The AI Agent fixes the layout (headings, bullets, broken lines) without changing any content">Clean up with the AI Agent</button>
+          <button id="resume-set-master">Make master</button>
+          <button id="resume-docx">Download .docx</button>
+          <button id="resume-delete" class="danger">Delete</button>
+          <button id="resume-save" class="primary">Save</button>
+        </div>
+        <textarea id="resume-content" spellcheck="true" placeholder="Upload a resume or paste it here (markdown: # Name, ## Section, - bullet)"></textarea>
+        <div id="resume-preview" class="md hidden"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- PREFERENCES -->
+  <main id="tab-prefs" class="tab hidden">
+    <form id="prefs-form" class="card form-grid">
+      <h2>Job search preferences</h2>
+      <label>Target job titles <span class="hint">one per line; used as search queries</span>
+        <textarea name="target_titles" rows="7"></textarea></label>
+      <label>Title must include one of <span class="hint">one per line; empty = rely on similarity to target titles</span>
+        <textarea name="title_must_include_any" rows="7"></textarea></label>
+      <label>…and must also include a role word <span class="hint">one per line, e.g. engineer, developer, support</span>
+        <textarea name="title_role_any" rows="7"></textarea></label>
+      <label>Exclude titles containing <span class="hint">one per line</span>
+        <textarea name="title_exclude" rows="5"></textarea></label>
+      <label>Exclude postings mentioning <span class="hint">one per line</span>
+        <textarea name="keywords_exclude" rows="5"></textarea></label>
+      <label>Boost postings mentioning <span class="hint">skills you want to use; one per line</span>
+        <textarea name="keywords_boost" rows="5"></textarea></label>
+      <div class="stack">
+        <label class="check"><input type="checkbox" name="remote_only"> Remote roles only</label>
+        <label>Locations (when not remote-only) <span class="hint">one per line</span>
+          <textarea name="locations" rows="2"></textarea></label>
+        <label>Country code <input name="country" type="text" maxlength="2"></label>
+        <label>Employment types
+          <div class="checks" data-multi="employment_types">
+            <label class="check"><input type="checkbox" value="FULLTIME"> Full-time</label>
+            <label class="check"><input type="checkbox" value="CONTRACTOR"> Contract</label>
+            <label class="check"><input type="checkbox" value="PARTTIME"> Part-time</label>
+            <label class="check"><input type="checkbox" value="INTERN"> Internship</label>
+          </div></label>
+      </div>
+      <div class="stack">
+        <label>Minimum salary (USD/year, 0 = any) <input name="min_salary" type="number" min="0" step="1000"></label>
+        <label>Posted within (days) <input name="posted_within_days" type="number" min="1" max="60"></label>
+        <label>Minimum keyword score to show as New <span class="hint">lower scores go to "Low match"</span>
+          <input name="min_keyword_score" type="number" min="0" max="100"></label>
+        <label class="check"><input type="checkbox" name="ai_score_enabled"> Score new jobs with the AI Agent automatically <span class="hint">on startup and after every Refresh, the whole unscored backlog; the local LLM has no cap</span></label>
+        <label>Max AI scores per run <span class="hint">Anthropic API engine + Claude Code batch only; local LLM scores every job</span><input name="ai_score_max_per_run" type="number" min="0" max="100"></label>
+        <label>Hide new jobs the AI scores below <span class="hint">0 = never; "Show hidden" on the Jobs tab shows them</span>
+          <input name="hide_below_score" type="number" min="0" max="100"></label>
+        <label>Hide new unscored jobs with keyword score below <span class="hint">0 = never; once the AI scores a job, its AI score decides</span>
+          <input name="hide_below_keyword_score" type="number" min="0" max="100"></label>
+      </div>
+      <div class="stack">
+        <b>Sources</b>
+        <div id="source-toggles" class="checks" data-multi="enabled_sources"></div>
+        <p class="small muted">Sources that need keys show "needs key" until you add them under Settings.</p>
+      </div>
+      <div class="form-actions"><button class="primary" type="submit">Save preferences</button></div>
+    </form>
+  </main>
+
+  <!-- SETTINGS -->
+  <main id="tab-settings" class="tab hidden">
+    <section id="staging-tools" class="card hidden" style="margin-bottom:16px; border-color:#d9730d">
+      <h2>Staging test data</h2>
+      <p class="small">Copy your production jobs, resumes, preferences, settings, email links, API keys and Gmail sign-in into staging, so you can test changes against real data. Production is only read, never changed. This replaces staging's current data.</p>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button id="copy-prod" class="primary">Copy production data into staging</button>
+      </div>
+    </section>
+    <div class="subtabs" id="settings-subtabs">
+      <button type="button" data-stab="account" class="active">Integrations</button>
+      <button type="button" data-stab="setup">AI Settings</button>
+      <button type="button" data-stab="app">Profile</button>
+      <button type="button" id="open-wizard" class="ghost" style="margin-left:auto">Setup wizard</button>
+    </div>
+    <div class="settings-pane" data-stab="account">
+      <div class="settings-layout">
+        <section class="card">
+          <h2>API keys</h2>
+          <p class="small muted">Stored in Windows Credential Manager on this PC, never in the app database. Only the first and last few characters are shown.</p>
+          <div id="secret-list"></div>
+          <details class="help">
+            <summary>Where do I get these?</summary>
+            <ul>
+              <li><b>Anthropic</b>: console.anthropic.com → API keys. Powers scoring, tailoring and cover letters.</li>
+              <li><b>JSearch</b>: <a href="https://app.openwebninja.com" target="_blank" rel="noopener noreferrer">app.openwebninja.com</a> → free plan (no card) → enable JSearch → copy your API key. This is how Indeed and ZipRecruiter postings come in. A JSearch key from RapidAPI works too.</li>
+              <li><b>USAJOBS</b> (optional): developer.usajobs.gov → request an API key.</li>
+              <li><b>Remotive / Remote OK</b>: no key needed.</li>
+            </ul>
+          </details>
+        </section>
+        <section class="card">
+          <h2>Gmail</h2>
+          <div id="gmail-box"></div>
+          <details class="help" id="gmail-help">
+            <summary>One-time Google setup (about 5 minutes)</summary>
+            <p class="small">Google only lets apps read Gmail through an OAuth client that you own. It's free and only you will use it.</p>
+            <ol class="small">
+              <li>Go to <b>console.cloud.google.com</b> and create a project, for example "JobScout".</li>
+              <li><b>APIs &amp; Services → Library</b>: search for <b>Gmail API</b> and click <b>Enable</b>.</li>
+              <li><b>Google Auth Platform</b> (or <b>OAuth consent screen</b>) → Get started. App name: JobScout. Audience: <b>External</b>. Use your own email for the contact fields.</li>
+              <li><b>Audience → Test users → Add users</b>: add your Gmail address.</li>
+              <li><b>Clients → Create client</b>. Application type: <b>Desktop app</b>. Then <b>Download JSON</b>.</li>
+              <li>Choose that JSON file in <b>Step 1</b> above (it saves right away), then click <b>Connect Gmail</b>. Google's sign-in opens in your browser. Sign in as usual (SSO and 2-step verification work). Google will warn that the app isn't verified, which is expected for your own private app: click <b>Continue</b>.</li>
+            </ol>
+            <p class="small muted">While the Google app is in "Testing" mode, Google expires the sign-in about every 7 days. JobScout will ask you to click Connect again when that happens. To avoid it, set the app to "In production" under Audience. That needs no review for personal use, but Google will keep showing the unverified-app warning.</p>
+          </details>
+        </section>
+      </div>
+    </div>
+    <div class="settings-pane hidden" data-stab="setup">
+      <div class="settings-layout">
+        <section class="card" id="lm-card">
+          <h2>Built-in local model <span class="hint" title="JobScout can run an AI model right on this computer with its own small runtime (llama.cpp). No API key, no token costs, works offline. Nothing is downloaded until you click Install.">Optional AI on this machine — no key, no token cost</span></h2>
+          <p id="lm-hw" class="small muted">Checking your hardware…</p>
+          <div id="lm-tiers" class="lm-tiers"></div>
+          <div id="lm-progress" class="lm-progress hidden">
+            <div class="small" id="lm-phase">Preparing…</div>
+            <progress id="lm-bar" max="100" value="0"></progress><span id="lm-pct" class="small muted"></span>
+          </div>
+          <p id="lm-status" class="small"></p>
+          <div class="toolbar"><button type="button" id="lm-stop" class="danger hidden">Stop the model (free its memory)</button></div>
+        </section>
+        <form id="ai-form" class="card form-grid">
+          <h2>AI engine</h2>
+          <label class="span2">AI Agent runs in
+            <select name="ai_engine" title="Picking a built-in model above sets this for you.">
+              <option value="local_builtin">Local LLM (built-in) — the model on this computer (no key, no token cost; scoring and email sorting run automatically)</option>
+              <option value="local_external">Local LLM (External) — your own OpenAI-compatible server, e.g. a home workstation (no key, no token cost; scoring and email sorting run automatically)</option>
+              <option value="claude_code">Claude Code, on your Claude plan (no API key; each task opens in the Claude Code panel)</option>
+              <option value="api">The Anthropic API (needs an API key; scoring and email sorting run automatically)</option>
+            </select></label>
+          <label>External LLM URL <span class="hint">OpenAI-compatible base URL ending in /v1; External engine only — the built-in model never overwrites it</span>
+            <input name="local_llm_url" id="local-llm-url" placeholder="http://192.168.1.10:8081/v1"></label>
+          <label>External LLM model <span class="hint">id exactly as shown by GET &lt;URL&gt;/models</span>
+            <input name="local_llm_model" placeholder="model id shown by GET /v1/models"></label>
+          <label>Network wait <span class="hint">seconds to keep retrying when the local LLM is unreachable (VPN still connecting, server reloading); 0 = fail fast</span>
+            <input name="local_llm_wait" type="number" min="0" max="900" step="15" placeholder="0"></label>
+          <label class="check">Integrated Claude Code <span class="hint">tailor, write and draft in a Claude Code panel on your Claude plan (no API key needed)</span>
+            <input type="checkbox" name="claude_code_enabled"></label>
+          <div class="span2 small" style="display:flex;align-items:center;gap:10px">
+            <span id="local-llm-status"></span>
+            <button type="button" id="local-llm-check">Check now</button>
+          </div>
+          <label>Claude Code location <span class="hint">path to claude.exe for the Claude Code panel; leave empty to find it automatically</span>
+            <input name="claude_code_path" id="claude-code-path" placeholder="(auto-detect)"></label>
+          <label>Claude model <span class="hint">API engine only</span>
+            <select name="model">
+              <option value="claude-opus-5-5">Claude Opus 5.5 (best quality)</option>
+              <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
+              <option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest)</option>
+            </select></label>
+          <label>Effort for tailoring &amp; cover letters <span class="hint">API &amp; local engines</span>
+            <select name="effort"><option>low</option><option>medium</option><option>high</option></select></label>
+          <div class="form-actions"><button class="primary" type="submit">Save AI settings</button></div>
+        </form>
+      </div>
+    </div>
+    <div class="settings-pane hidden" data-stab="app">
+      <form id="app-form" class="card form-grid">
+        <h2>You <span class="hint">used in cover letters, file names and drafted emails</span></h2>
+        <label>Name <input name="applicant_name"></label>
+        <label>Email <input name="applicant_email" type="email"></label>
+        <label>Phone <input name="applicant_phone"></label>
+        <label>Location <input name="applicant_location"></label>
+        <label class="span2">Links <span class="hint">LinkedIn, GitHub, portfolio; one per line</span><textarea name="applicant_links" rows="3"></textarea></label>
+        <label class="span2">Cover letter tone<textarea name="cover_letter_tone" rows="2"></textarea></label>
+        <label class="span2">Resume tailoring rules<textarea name="tailoring_rules" rows="4"></textarea></label>
+        <label class="span2">Email signature <span class="hint">used in AI-drafted emails; empty = name, phone, links</span><textarea name="email_signature" rows="3"></textarea></label>
+        <h2 class="span2">Behavior</h2>
+        <label class="check"><input type="checkbox" name="refresh_on_startup"> Check jobs and sync Gmail once when JobScout opens</label>
+        <label>Gmail sync window (days) <input name="gmail_days" type="number" min="7" max="365"></label>
+        <label class="span2">Gmail search for job mail <span class="hint">Gmail search syntax; empty = built-in default (shown as placeholder)</span><textarea name="gmail_query" rows="3" id="gmail-query"></textarea></label>
+        <h2 class="span2">Diagnostics</h2>
+        <label class="check"><input type="checkbox" name="debug_panel"> Show the debug panel (Console / Network) at the bottom</label>
+        <label>Log level
+          <select name="log_level"><option value="INFO">Info (normal)</option><option value="DEBUG">Debug (log every outbound call to the file too)</option><option value="WARNING">Warnings and errors only</option></select></label>
+        <div class="form-actions"><button class="primary" type="submit">Save settings</button></div>
+      </form>
+    </div>
+  </main>
+
+  <!-- ACTIVITY -->
+  <main id="tab-activity" class="tab hidden">
+    <section class="card">
+      <h2>Activity</h2>
+      <div id="last-run" class="small"></div>
+      <ul id="activity-list" class="activity"></ul>
+    </section>
+  </main>
+
+  <!-- DEBUG DOCK: Console + Network, like a browser's dev tools. Collapsed by default; Ctrl+` toggles. -->
+  <section id="debug-dock" class="dock collapsed" aria-label="Debug panel">
+    <div class="dock-resize" id="dock-resize" title="Drag to resize"></div>
+    <div class="dock-bar">
+      <button type="button" id="dock-toggle" class="dock-toggle" title="Show or hide the debug panel (Ctrl+`)">▸ Debug</button>
+      <div class="dock-tabs">
+        <button type="button" data-dtab="console" class="active">Console <span id="d-errs" class="count-badge hidden"></span></button>
+        <button type="button" data-dtab="network">Network <span id="d-fails" class="count-badge hidden"></span></button>
+      </div>
+      <span id="dock-summary" class="small muted"></span>
+      <span class="spacer"></span>
+      <div class="dock-tools">
+        <input type="search" id="d-filter" placeholder="Filter">
+        <select id="d-level" title="Console level">
+          <option value="all">All levels</option><option value="info">Info and up</option>
+          <option value="warning">Warnings and errors</option><option value="error">Errors only</option>
+        </select>
+        <select id="d-kind" title="Network requests" class="hidden">
+          <option value="all">All requests</option><option value="app">App API</option>
+          <option value="outbound">Outbound (job sites, Gmail, AI)</option><option value="failed">Failed</option>
+        </select>
+        <label class="check small hidden" id="d-static-wrap"><input type="checkbox" id="d-hide-static" checked> Hide static files</label>
+        <label class="check small"><input type="checkbox" id="d-follow" checked> Follow</label>
+        <button type="button" id="d-clear">Clear</button>
+        <a href="/api/debug/log-file" class="small" title="Download the full log file">Log file</a>
+      </div>
+    </div>
+    <div class="dock-body">
+      <div id="d-console" class="dpane console-pane"></div>
+      <div id="d-network" class="dpane net-pane hidden">
+        <div class="net-list"><table>
+          <thead><tr><th>Time</th><th>Type</th><th>Method</th><th>URL</th><th>Status</th><th>Time (ms)</th><th>Size</th></tr></thead>
+          <tbody id="net-rows"></tbody>
+        </table></div>
+        <div id="net-detail" class="net-detail hidden"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADD JOB DIALOG -->
+  <dialog id="add-dialog">
+    <form method="dialog" id="add-form">
+      <h3>Add a job</h3>
+      <p class="small muted">Paste a posting from any site (on the job page press Ctrl+A, Ctrl+C, then paste here). The AI Agent pulls out the title, company and description.</p>
+      <label>Posting URL <input name="url" type="url" placeholder="https://…"></label>
+      <label>Job description text <textarea name="text" rows="12" placeholder="Paste the full posting text"></textarea></label>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button id="add-submit" class="primary" type="button">Add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- COMPOSE DIALOG (new email or reply) -->
+  <!-- SETUP WIZARD (Settings > "Setup wizard" button; opens pre-filled with the current setup) -->
+  <dialog id="wizard-dialog" class="wide">
+    <form id="wizard-form" autocomplete="off">
+      <div class="w-head">
+        <h3>Set up JobScout</h3>
+        <span class="w-dots" id="wizard-dots"><i></i><i></i><i></i><i></i></span>
+        <span class="small muted" id="w-step-name"></span>
+      </div>
+
+      <div class="wstep form-grid" data-wstep="0">
+        <h2>About you <span class="hint">one value per field; used in cover letters, file names and drafted emails</span></h2>
+        <label>Name <span class="hint">as on your resume (1)</span><input name="applicant_name" placeholder="Jordan Ellis"></label>
+        <label>Email <span class="hint">the address recruiters reach you at (1)</span><input name="applicant_email" type="email"></label>
+        <label>Phone <span class="hint">optional (1)</span><input name="applicant_phone" type="tel"></label>
+        <label>Location <span class="hint">city, state (1)</span><input name="applicant_location" placeholder="Columbus, OH"></label>
+        <label class="span2">Links <span class="hint">1–3, one per line (LinkedIn, GitHub, portfolio)</span><textarea name="applicant_links" rows="3"></textarea></label>
+      </div>
+
+      <div class="wstep form-grid hidden" data-wstep="1">
+        <h2>Job search <span class="hint">the entry counts below are what the AI scoring works best with</span></h2>
+        <label>Target job titles <span class="hint">3–6, one per line — each becomes a live search query</span>
+          <textarea name="target_titles" rows="6" placeholder="Customer Service Representative&#10;Administrative Coordinator&#10;Data Entry Clerk"></textarea></label>
+        <label>Boost postings mentioning <span class="hint">5–12 skills, one per line — the keyword ranking is only as good as this list</span>
+          <textarea name="keywords_boost" rows="5" placeholder="communication&#10;Microsoft Excel&#10;customer service"></textarea></label>
+        <label>Exclude postings mentioning <span class="hint">0–5 hard disqualifiers</span>
+          <textarea name="keywords_exclude" rows="2" placeholder="night shift"></textarea></label>
+        <label>Exclude titles containing <span class="hint">5–10 roles above your target</span>
+          <textarea name="title_exclude" rows="3" placeholder="senior&#10;lead&#10;manager"></textarea></label>
+        <label class="span2">Title filters <span class="hint">optional fine-tuning: first box = words the title must contain (5–10), second = role words it must also contain (5–8). Empty is a good start — the AI catches bad fits anyway.</span></label>
+        <label>Title must include one of <textarea name="title_must_include_any" rows="3" placeholder="junior&#10;entry level&#10;associate"></textarea></label>
+        <label>…and include a role word <textarea name="title_role_any" rows="3" placeholder="assistant&#10;representative&#10;coordinator"></textarea></label>
+        <div class="stack">
+          <label class="check"><input type="checkbox" name="remote_only"> Remote roles only</label>
+          <label>Locations (when not remote-only) <span class="hint">1–2, one per line</span><textarea name="locations" rows="2"></textarea></label>
+          <label class="check">Employment types
+            <div class="checks" data-multi="employment_types">
+              <label class="check"><input type="checkbox" value="FULLTIME"> Full-time</label>
+              <label class="check"><input type="checkbox" value="CONTRACTOR"> Contract</label>
+              <label class="check"><input type="checkbox" value="PARTTIME"> Part-time</label>
+              <label class="check"><input type="checkbox" value="INTERN"> Internship</label>
+            </div></label>
+        </div>
+        <div class="stack">
+          <label>Minimum pay <span class="hint">hourly by default; search APIs work in yearly figures, so an hourly rate is converted at 2,080 h/yr</span>
+            <span style="display:flex;gap:6px"><input id="w-pay-amount" type="number" min="0" step="0.5" placeholder="0 = any" style="flex:1 1 auto;min-width:110px">
+            <select id="w-pay-unit" style="flex:0 0 auto"><option value="hour" selected>per hour</option><option value="year">per year</option></select></span></label>
+          <label>Posted within (days) <span class="hint">3–7 is a good default</span><input name="posted_within_days" type="number" min="1" max="60"></label>
+          <b>Sources <span class="hint">enable 2–4; free ones need no key</span></b>
+          <div id="w-sources" class="checks" data-multi="enabled_sources"></div>
+        <div id="w-source-keys" class="stack"></div>
+        </div>
+      </div>
+
+      <div class="wstep form-grid hidden" data-wstep="2">
+        <h2>Resume <span class="hint">upload one here or later in the Resume tab; the AI only ever uses what's on it</span></h2>
+        <p id="w-resume-existing" class="small"></p>
+        <label>Upload <span class="hint">.docx, .pdf, .txt or .md — extracted to markdown so you can review it</span>
+          <input type="file" id="w-resume-file" accept=".docx,.pdf,.txt,.md,.markdown"></label>
+        <label class="check"><input type="checkbox" id="w-resume-cleanup"> Let the AI tidy the layout after upload <span class="hint">needs a working AI engine from the next step — you can also run cleanup anytime in the Resume tab</span></label>
+        <p id="w-resume-status" class="small"></p>
+      </div>
+
+      <div class="wstep form-grid hidden" data-wstep="3">
+        <h2>AI engine <span class="hint">which model scores jobs, tailors resumes and sorts email</span></h2>
+        <label class="wai"><input type="radio" name="w_ai" value="builtin"> A built-in model on this computer <span class="hint">no key, no token cost; downloaded once, runs offline</span>
+          <span class="wai-body">
+            <select id="w-tier"></select>
+            <button type="button" id="w-tier-btn">Install &amp; use</button>
+            <span id="w-lm-status" class="small muted"></span>
+          </span></label>
+        <label class="wai"><input type="radio" name="w_ai" value="remote"> Your own OpenAI-compatible server <span class="hint">e.g. a llama.cpp server on a home workstation</span>
+          <span class="wai-body">
+            <input id="w-llm-url" placeholder="http://192.168.1.10:8081/v1">
+            <input id="w-llm-model" placeholder="model id shown by GET /v1/models">
+            <button type="button" id="w-llm-test">Check</button>
+            <span id="w-llm-status" class="small muted"></span>
+          </span></label>
+        <label class="wai"><input type="radio" name="w_ai" value="claude_code"> Claude Code panel <span class="hint">on your Claude plan, no API key; tasks start when you click them (writes, tailors, email drafts)</span>
+          <span class="wai-body"><span id="w-cc-status" class="small muted"></span></span></label>
+        <label class="wai"><input type="radio" name="w_ai" value="api"> Anthropic API <span class="hint">automatic scoring, billed per token</span>
+          <span class="wai-body">
+            <input id="w-apikey" type="password" placeholder="Anthropic API key (sk-ant-…)">
+            <select id="w-apimodel">
+              <option value="claude-opus-5-5">Claude Opus 5.5 (best quality)</option>
+              <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cheaper)</option>
+              <option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest)</option>
+            </select>
+            <span id="w-key-status" class="small muted"></span>
+          </span></label>
+        <p class="small muted">Everything can be changed later in Settings.</p>
+      </div>
+
+      <div class="toolbar w-foot">
+        <button type="button" id="w-skip" class="ghost">Close</button>
+        <span class="spacer"></span>
+        <button type="button" id="w-back" class="hidden">Back</button>
+        <button type="button" id="w-next" class="primary">Next</button>
+        <button type="button" id="w-finish" class="primary hidden">Finish</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="compose-dialog" class="wide">
+    <form method="dialog" id="compose-form">
+      <h3 id="compose-title">New email</h3>
+      <div class="grid2">
+        <label>To <input name="to" type="text" placeholder="name@company.com" autocomplete="off"></label>
+        <label>Cc <input name="cc" type="text" autocomplete="off"></label>
+      </div>
+      <label>About job <select name="job_id"><option value="">(none)</option></select></label>
+      <label>Subject <input name="subject" type="text"></label>
+      <div class="toolbar">
+        <input name="instructions" type="text" placeholder="Tell the AI what to say, e.g. 'available Tue/Wed afternoons ET' or 'follow up on my application from last week'">
+        <button type="button" id="compose-ai" title="Drafts with whichever AI you picked in Settings">✨ Draft reply</button>
+      </div>
+      <label>Message <textarea name="body" rows="14"></textarea></label>
+      <div class="toolbar">
+        <label class="check"><input type="checkbox" name="attach_resume"> Attach resume (.docx; tailored version if this job has one)</label>
+        <label class="check"><input type="checkbox" name="attach_cover_letter"> Attach cover letter</label>
+      </div>
+      <div class="toolbar">
+        <span class="small muted">Nothing is sent until you click Send.</span>
+        <span class="spacer"></span>
+        <button value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button type="button" id="compose-draft">Save to Gmail drafts</button>
+        <button type="button" id="compose-send" class="primary">Send</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- CLAUDE CODE PANEL: an interactive Claude Code terminal for one task -->
+  <dialog id="cc-dialog" class="cc">
+    <div class="cc-head">
+      <div>
+        <h3 id="cc-title">Claude Code</h3>
+        <div id="cc-status" class="small muted"></div>
+      </div>
+      <span class="spacer"></span>
+      <button type="button" id="cc-apply" title="Load result.md again">Reload result</button>
+      <button type="button" id="cc-restart" title="Start a fresh session for this task">Restart</button>
+      <button type="button" id="cc-stop" class="danger">End session</button>
+      <button type="button" id="cc-close" class="primary">Close</button>
+    </div>
+    <div id="cc-term" class="cc-term"></div>
+    <div class="small muted cc-foot">
+      A normal Claude Code session on your own Claude plan. Type to chat ("make it shorter", "mention my Splunk work").
+      It can only read and write files in this task's folder (no commands, no web), and JobScout picks up
+      its result file (<code>result.md</code> or <code>result.json</code>) automatically. First time only: pick a theme, choose <b>Claude account with subscription</b>, and sign in when your browser opens.
+      Closing this panel keeps the session running until you end it or close JobScout.
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/vendor/xterm/xterm.js"></script>
+  <script src="/static/vendor/xterm/addon-fit.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

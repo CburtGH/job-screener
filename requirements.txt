@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+anthropic
+pydantic
+httpx
+pypdf
+python-docx
+python-multipart
+keyring
+pywebview
+google-api-python-client
+google-auth
+google-auth-oauthlib
+pywinpty
+fpdf2

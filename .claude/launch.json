@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "jobscout",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "app"],
+      "env": { "JOBSCOUT_HEADLESS": "1" },
+      "port": 8765
+    },
+    {
+      "name": "jobscout-test",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "app"],
+      "env": { "JOBSCOUT_HEADLESS": "1", "JOBSCOUT_PORT": "8799", "JOBSCOUT_SKIP_STARTUP_REFRESH": "1" },
+      "port": 8799
+    }
+  ]
+}

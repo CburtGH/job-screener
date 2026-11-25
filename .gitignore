@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+# Your resume, jobs database and assisted-browser sessions live here. Never commit it.
+data/
+# Which environment this checkout is (production/staging). Each folder keeps its own.
+instance.json
