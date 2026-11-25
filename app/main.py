@@ -16,9 +16,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from . import ai, claude_code, config, db, gmail, local_model, logs, monitor, resume, sources
+from . import ai, claude_code, config, db, env, gmail, local_model, logs, monitor, resume, sources
 
-STATIC = Path(__file__).resolve().parent.parent / "static"
+STATIC = env.BUNDLE / "static"
 
 
 @asynccontextmanager

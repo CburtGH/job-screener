@@ -158,6 +158,9 @@ the Google token, because the token may be a copy of production's.
 | `CLAUDE.md` | Points Claude Code at this file |
 | `.githooks/pre-commit` | Runs the AGENTS.md check before each commit |
 | `.github/workflows/agents-md.yml` | Runs the AGENTS.md check on pushes and PRs |
+| `.github/workflows/release-exe.yml` | On `v*` tags: builds `JobScout.exe` (PyInstaller, windows-latest) and attaches it to the GitHub Release |
+| `run_jobscout.py` | PyInstaller entry point (calls `app.__main__.main()`) |
+| `jobscout.spec` | PyInstaller one-file build config (bundles `static/`, collect_all for webview/googleapiclient/keyring/winpty) |
 | `.claude/launch.json` | Dev-server configs for Claude Code's preview browser (headless; `jobscout-test` = port 8799, no startup refresh) |
 
 ## Data flow
