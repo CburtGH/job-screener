@@ -388,7 +388,8 @@ schemas, ignores extra keys, skips items outside the task (wrong job/thread id),
 
 - Four optional GGUF tiers served by a jobscout-managed llama.cpp server on `127.0.0.1:8899`
    (`MANAGED_URL`): light Qwen3-1.7B-Q8 (~1.7 GB), medium Qwen3-4B-Q4_K_M (~2.5 GB), heavy Qwen3-8B-Q4_K_M
-   (~4.7 GB), max Inkling-2-Mini-UD-Q2_K_XL (26B MoE / 3.4B active, ~8.5 GB, alias `inkling-2-mini`, `-c 4096`).
+   (~4.7 GB), max Inkling-2-Mini-UD-Q2_K_XL (26B MoE / 3.4B active, ~8.5 GB, alias `inkling-2-mini`, `-c 8192`,
+   `--cpu-moe` so the experts stay in RAM and the GPU only carries dense layers).
   Nothing downloads until the user clicks Install. Downloads live in `%LOCALAPPDATA%\JobScout\models\`
   (shared by production and staging), never in the checkout.
 - Hardware scan (`hardware()`, cached): RAM via kernel32, GPUs via `Win32_VideoController` + `nvidia-smi`

@@ -47,7 +47,8 @@ TIERS: dict[str, dict] = {
     "max": {
         "label": "MAX", "blurb": "Inkling 2 Mini: 26B MoE with only 3.4B active - top quality, built for 8 GB GPUs",
         "gguf": "unsloth/Inkling-2-Mini-GGUF/Inkling-2-Mini-UD-Q2_K_XL.gguf", "size": 8.5 * 2**30,
-        "min_ram": 16, "min_vram": 8, "alias": "inkling-2-mini", "min_build": 12600, "ctx": 4096,
+        "min_ram": 16, "min_vram": 8, "alias": "inkling-2-mini", "min_build": 12600, "ctx": 8192,
+        "flags": ["--cpu-moe"],  # keep the MoE experts in RAM: ~2-3 GB VRAM and a far gentler power draw
     },
 }
 
@@ -290,7 +291,8 @@ def start_server(tid: str, apply_engine: bool = False) -> str | None:
     spec = TIERS[tid]
     proc = subprocess.Popen([str(exe), "-m", str(model), "--alias", spec.get("alias", f"qwen3-{tid}"),
                              "--host", "127.0.0.1", "--port", str(PORT),
-                             "-ngl", "99", "-c", str(spec.get("ctx", 8192)), "--jinja"], creationflags=NO_WINDOW)
+                             "-ngl", "99", "-c", str(spec.get("ctx", 8192)), "--jinja", *spec.get("flags", [])],
+                            creationflags=NO_WINDOW)
     _server.update({"proc": proc, "tier": tid, "adopted": False})
     db.log(f"Built-in model: started llama-server ({TIERS[tid]['label']}) on port {PORT}")
     if apply_engine:
