@@ -261,8 +261,7 @@ function renderLocalModel() {
     const join = t.gate === "and" ? "and" : "or";
     const want = t.min_vram ? `best with ${t.min_ram} GB RAM ${join} ${t.min_vram} GB GPU memory` : `best with ${t.min_ram}+ GB RAM`;
     return `<div class="lm-tier${t.selected ? " sel" : ""}"><div><b>${t.label}</b> ${badges}` +
-      `<div class="small muted">${esc(t.blurb)} · ${want}</div>` +
-      `<div class="small lm-warn">⚠ AI makes mistakes — review every score, resume and letter before submitting anything to a live site.</div></div>${btn}</div>`;
+      `<div class="small muted">${esc(t.blurb)} · ${want}</div></div>${btn}</div>`;
   }).join("");
   const inst = s.install;
   if (inst.active || inst.phase === "error") {
