@@ -47,7 +47,7 @@ TIERS: dict[str, dict] = {
     "max": {
         "label": "MAX", "blurb": "Inkling 2 Mini: 26B MoE with only 3.4B active - top quality, built for 8 GB GPUs",
         "gguf": "unsloth/Inkling-2-Mini-GGUF/Inkling-2-Mini-UD-Q2_K_XL.gguf", "size": 8.5 * 2**30,
-        "min_ram": 16, "min_vram": 8, "alias": "inkling-2-mini", "min_build": 12600, "ctx": 8192,
+        "min_ram": 12, "min_vram": 8, "alias": "inkling-2-mini", "min_build": 12600, "ctx": 8192,
         "gate": "and",  # really needs BOTH: the experts sit in RAM (--cpu-moe) and the dense layers want the GPU
         "flags": ["--cpu-moe"],  # keep the MoE experts in RAM: ~2-3 GB VRAM and a far gentler power draw
     },
