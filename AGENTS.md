@@ -256,7 +256,7 @@ All under `/api`. Writes require the `X-JobScout: 1` header.
 | `GET /api/jobs/{jid}` | One job |
 | `PATCH /api/jobs/{jid}` | Edit status, notes, tailored resume, cover letter, `hidden` (true = Hide, false = sticky Unhide), … |
 | `DELETE /api/jobs/{jid}` | Remove: delete the job, unlink its emails, add it to `removed_jobs` so it's never fetched again |
-| `POST /api/jobs/{jid}/score` | Claude match score |
+| `POST /api/jobs/{jid}/score` | Claude match score (optional body `{context}` = candidate revision notes, used by the light/medium "notes box" second pass) |
 | `POST /api/ai/score-unscored` | Score-now catch-up: every new visible unscored job, off-thread (local uncapped, API capped; 409 if a run holds the pipeline; rejected for Claude Code) |
 | `POST /api/jobs/{jid}/tailor` | Claude resume tailoring |
 | `POST /api/jobs/{jid}/cover-letter` | Claude cover letter |
@@ -400,7 +400,8 @@ schemas, ignores extra keys, skips items outside the task (wrong job/thread id),
   (shared by production and staging), never in the checkout.
 - Hardware scan (`hardware()`, cached): RAM via kernel32, GPUs via `Win32_VideoController` + `nvidia-smi`
   (name/vRAM/vendor, NVIDIA VRAM corrected to nvidia-smi's exact value), free disk. `recommend()` walks
-  max→light and returns the first tier whose `min_vram` OR `min_ram` fits with 2 GB disk headroom; the UI
+   max→light and returns the first tier that fits with 2 GB disk headroom: `min_vram` OR `min_ram` normally, but a
+   tier with `"gate": "and"` (max) needs both `min_vram` AND `min_ram`; the UI
   always lets the user override (confirm dialog).
 - Vendor-neutral runtime: NVIDIA → CUDA build (+ separate cudart zip, extracted into the same folder),
   AMD/Intel/Arc → Vulkan build, no GPU → CPU build; asset chosen from the newest llama.cpp GitHub release.

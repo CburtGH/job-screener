@@ -48,6 +48,7 @@ TIERS: dict[str, dict] = {
         "label": "MAX", "blurb": "Inkling 2 Mini: 26B MoE with only 3.4B active - top quality, built for 8 GB GPUs",
         "gguf": "unsloth/Inkling-2-Mini-GGUF/Inkling-2-Mini-UD-Q2_K_XL.gguf", "size": 8.5 * 2**30,
         "min_ram": 16, "min_vram": 8, "alias": "inkling-2-mini", "min_build": 12600, "ctx": 8192,
+        "gate": "and",  # really needs BOTH: the experts sit in RAM (--cpu-moe) and the dense layers want the GPU
         "flags": ["--cpu-moe"],  # keep the MoE experts in RAM: ~2-3 GB VRAM and a far gentler power draw
     },
 }
@@ -149,8 +150,9 @@ def hardware() -> dict:
 def recommend(hw: dict | None = None) -> str:
     hw = hw or hardware()
     for tier, spec in reversed(list(TIERS.items())):
-        if (hw["vram_gb"] >= spec["min_vram"] or hw["ram_gb"] >= spec["min_ram"]) and (
-                hw["free_gb"] >= round(spec["size"] / 2**30) + 2):
+        enough = (hw["vram_gb"] >= spec["min_vram"] or hw["ram_gb"] >= spec["min_ram"]) if spec.get("gate") != "and" \
+            else (hw["vram_gb"] >= spec["min_vram"] and hw["ram_gb"] >= spec["min_ram"])
+        if enough and hw["free_gb"] >= round(spec["size"] / 2**30) + 2:
             return tier
     return "light"
 

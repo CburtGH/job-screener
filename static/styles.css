@@ -254,10 +254,13 @@ body.staging .topbar { border-bottom: 2px solid #d9730d; }
 }
 
 /* Built-in local model card */
-.lm-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.lm-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 10px 0; }
 .lm-tier { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .lm-tier.sel { border-color: var(--accent); }
 .lm-tier button { align-self: flex-start; }
+.lm-warn { color: #b8860b; }
+/* Optional "what the AI got wrong" note that rides along with Re-score (light/medium tiers). */
+.score-ctx textarea { width: 100%; margin-top: 6px; resize: vertical; }
 .lm-progress { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
 .lm-progress progress { flex: 1; height: 10px; }
 @media (max-width: 820px) { .lm-tiers { grid-template-columns: 1fr; } }

@@ -239,6 +239,8 @@ async function loadLocalModel() {
 }
 
 function lmTier(id) { return (S.localModel?.tiers || []).find((t) => t.id === id); }
+// The tier that would actually answer a score right now: the running server, else the user's chosen tier.
+function lmTierId() { return S.localModel ? (S.localModel.server?.running ? S.localModel.server.tier : S.localModel.selection) : null; }
 
 function renderLocalModel() {
   const s = S.localModel; if (!s) return;
@@ -256,9 +258,11 @@ function renderLocalModel() {
       t.running ? '<span class="badge">running</span>' : t.selected ? '<span class="badge gray">installed</span>' : "",
     ].join(" ");
     const btn = t.running ? "" : `<button data-lm="${t.id}">${t.installed ? "Use this" : `Install · ${t.gb} GB`}</button>`;
-    const want = t.min_vram ? `best with ${t.min_ram} GB RAM or ${t.min_vram} GB GPU memory` : `best with ${t.min_ram}+ GB RAM`;
+    const join = t.gate === "and" ? "and" : "or";
+    const want = t.min_vram ? `best with ${t.min_ram} GB RAM ${join} ${t.min_vram} GB GPU memory` : `best with ${t.min_ram}+ GB RAM`;
     return `<div class="lm-tier${t.selected ? " sel" : ""}"><div><b>${t.label}</b> ${badges}` +
-      `<div class="small muted">${esc(t.blurb)} · ${want}</div></div>${btn}</div>`;
+      `<div class="small muted">${esc(t.blurb)} · ${want}</div>` +
+      `<div class="small lm-warn">⚠ AI makes mistakes — review every score, resume and letter before submitting anything to a live site.</div></div>${btn}</div>`;
   }).join("");
   const inst = s.install;
   if (inst.active || inst.phase === "error") {
@@ -488,6 +492,10 @@ function renderJob() {
         ${j.status !== "dismissed" ? '<button id="j-dismiss" title="Not interested: sets the status to dismissed and hides it">Dismiss</button>' : ""}
         <button id="j-remove" class="danger" title="Delete this job and never fetch it again">Remove</button>
       </div>
+      ${!ccMode() && ["light", "medium"].includes(lmTierId()) ? `
+      <div class="score-ctx">
+        <textarea id="j-score-ctx" rows="2" placeholder="Optional: tell the AI what a previous score got wrong (e.g. &quot;I DO have AWS experience - see my Redox role&quot;) and Re-score with the AI Agent for a smarter second pass."></textarea>
+      </div>` : ""}
     </div>
 
     ${j.ai_summary ? `
@@ -535,7 +543,18 @@ function renderJob() {
   $("#j-score").addEventListener("click", (e) => ccMode() ? openClaudeCode({
     title: `Claude Code: score ${j.title}`, request: { kind: "score", job_id: j.id },
     onResult: async () => { await openJob(j.id); await loadJobs(); toast("Score saved from Claude Code"); },
-  }) : busy(e.target, "Scoring…", async () => { await api(`/api/jobs/${j.id}/score`, { method: "POST" }); await openJob(j.id); }));
+  }) : busy(e.target, "Scoring…", async () => {
+    const ctx = $("#j-score-ctx")?.value?.trim();
+    await api(`/api/jobs/${j.id}/score`, { method: "POST", body: ctx ? { context: ctx } : {} });
+    await openJob(j.id);
+    toast(ctx ? "Re-scored with your notes" : "Scored");
+  }));
+  const ctxEl = $("#j-score-ctx"); // draft notes survive re-renders while the job stays open in this session
+  if (ctxEl) {
+    S.scoreCtx = S.scoreCtx || {};
+    ctxEl.value = S.scoreCtx[j.id] || "";
+    ctxEl.addEventListener("input", () => { S.scoreCtx[j.id] = ctxEl.value; });
+  }
   // One button per task: Settings > "AI Agent runs in" decides who does the work (Claude Code panel, or a direct call).
   $("#k-tailor").addEventListener("click", (e) => ccMode() ? openClaudeCode({
     title: `Claude Code: tailor resume for ${j.title}`, request: { kind: "tailor", job_id: j.id },

@@ -300,11 +300,21 @@ SCORING_SYSTEM = (
 )
 
 
-def score_job(job: dict, resume_md: str, prefs: dict) -> MatchResult:
+def score_job(job: dict, resume_md: str, prefs: dict, context: str | None = None) -> MatchResult:
     pref_text = json.dumps({k: prefs.get(k) for k in ("target_titles", "remote_only", "keywords_boost", "min_salary", "employment_types")})
+    system = [SCORING_SYSTEM, _resume_block(resume_md)]
+    # Optional second-pass guidance: the user noted what a previous score got wrong so the model can course-correct.
+    if context and context.strip():
+        system.append(
+            "REVISION NOTES from the candidate about a previous score for this exact job. The candidate believes "
+            "that pass was wrong or missed something. Weigh these notes only as pointers back to the resume - the "
+            "resume is still the only source of truth, and you must not invent anything the resume does not show. "
+            "Recheck the specific points raised and correct the score, strengths and gaps if the resume supports it.\n"
+            f"<revision_notes>{context.strip()[:2000]}</revision_notes>"
+        )
     return _call(
         MatchResult,
-        [SCORING_SYSTEM, _resume_block(resume_md)],
+        system,
         f"<preferences>{pref_text}</preferences>\n\n{_job_block(job)}",
         effort="low",
     )

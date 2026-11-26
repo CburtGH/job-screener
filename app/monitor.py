@@ -30,7 +30,7 @@ def _insert(job: dict) -> int | None:
         return cur.lastrowid
 
 
-def ai_score_job(job_id: int) -> dict:
+def ai_score_job(job_id: int, context: str | None = None) -> dict:
     master = resume.get_master()
     if not master:
         raise ai.AIError("Add a resume first (Resume tab).")
@@ -39,7 +39,7 @@ def ai_score_job(job_id: int) -> dict:
     if not row:
         raise KeyError(job_id)
     job = db.row_to_job(row)
-    res = ai.score_job(job, master["content"], config.get_preferences())
+    res = ai.score_job(job, master["content"], config.get_preferences(), context=context)
     save_score(job_id, res)
     return res.model_dump()
 

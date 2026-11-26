@@ -385,9 +385,10 @@ def _master_or_400() -> dict:
 
 
 @app.post("/api/jobs/{jid}/score")
-async def score_job(jid: int):
+async def score_job(jid: int, body: dict | None = None):
+    context = (body or {}).get("context") or None
     try:
-        return await run_in_threadpool(monitor.ai_score_job, jid)
+        return await run_in_threadpool(monitor.ai_score_job, jid, context)
     except ai.AIError as e:
         raise HTTPException(400, str(e))
 
