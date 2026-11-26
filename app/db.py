@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     cover_letter  TEXT,
     notes         TEXT,
     applied_at    TEXT,
+    archived_at   TEXT,                 -- set by the 60-day rule (monitor.archive_stale); purged 5 days later
     UNIQUE(source, external_id)
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key);
@@ -145,6 +146,9 @@ def init() -> None:
         # Dismissed jobs and low-scored new jobs are hidden too; see monitor.hidden_sql().
         if "hidden" not in cols:
             c.execute("ALTER TABLE jobs ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+        # archived_at: soft delete by the 60-day rule (monitor.archive_stale); NULL = never archived.
+        if "archived_at" not in cols:
+            c.execute("ALTER TABLE jobs ADD COLUMN archived_at TEXT")
 
 
 def kv_get(key: str, default=None):

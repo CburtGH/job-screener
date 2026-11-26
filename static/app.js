@@ -404,10 +404,13 @@ function updateSiteLinks() { $$("a[data-site]").forEach((a) => { a.href = siteUr
 
 // ---------- jobs ----------
 async function loadJobs() {
-  const params = new URLSearchParams({ status: $("#f-status").value, sort: $("#f-sort").value, q: $("#f-q").value, show_hidden: $("#f-hidden").checked });
+  const archived = $("#f-archived").checked;
+  $("#f-status").disabled = $("#f-sort").disabled = archived; // the Archived view has its own order
+  const params = new URLSearchParams({ status: archived ? "archived" : $("#f-status").value, sort: $("#f-sort").value, q: $("#f-q").value, show_hidden: $("#f-hidden").checked });
   const data = await api("/api/jobs?" + params);
   S.jobs = data.jobs; S.unscored = data.unscored || 0;
   $("#hidden-count").textContent = data.hidden_count ? `(${data.hidden_count})` : "";
+  $("#archived-count").textContent = data.archived_count ? `(${data.archived_count})` : "";
   const cap = +(S.settings?.preferences?.ai_score_max_per_run || 15); // Claude Code batches its one session to `cap`
   $("#score-batch").textContent = ccMode()
     ? (S.unscored > cap ? `✨ Score the top ${cap} of ${S.unscored} new jobs with the AI Agent`
@@ -419,14 +422,16 @@ async function loadJobs() {
   $("#counts").textContent = order.filter((k) => c[k]).map((k) => `${k.replace("_", " ")}: ${c[k]}`).join(" · ") || "No jobs yet. Click “Check for jobs now”.";
   renderJobList();
 }
+const STATUS_TINT = { applied: "st-applied", interview: "st-interview", offer: "st-offer" };
+const STATUS_EMOJI = { applied: "🚀 ", interview: "✨ ", offer: "🎉 " };
 function renderJobList() {
   $("#job-list").innerHTML = S.jobs.map((j) => `
-    <li data-id="${j.id}" class="${S.currentJob?.id === j.id ? "active" : ""} ${isHidden(j) ? "is-hidden" : ""}">
+    <li data-id="${j.id}" class="${S.currentJob?.id === j.id ? "active" : ""} ${isHidden(j) ? "is-hidden" : ""} ${STATUS_TINT[j.status] || ""}">
       <div class="t">${esc(j.title)}</div>
       <div class="score">${scorePill(j)}</div>
       <div class="meta">${esc(j.company || "Unknown company")} · ${esc(j.publisher || j.source)}${j.is_remote ? " · Remote" : ""}${salary(j) ? " · " + esc(salary(j)) : ""}</div>
-      <div class="meta">${j.status !== "new" ? `<span class="badge gray">${esc(j.status)}</span> ` : ""}${isHidden(j) ? '<span class="badge gray">hidden</span> ' : ""}${j.posted_at ? "posted " + esc(fmtDate(j.posted_at)) + " · " : ""}found ${esc(ago(j.found_at))}${j.has_tailored ? " · resume ✓" : ""}${j.has_cover ? " · letter ✓" : ""}</div>
-      ${j.status === "dismissed" ? "" : j.is_hidden ? `<button class="row-hide" data-unhide="${j.id}" title="Show this job in the list again">Unhide</button>`
+      <div class="meta">${j.status !== "new" ? `<span class="badge gray">${STATUS_EMOJI[j.status] || ""}${esc(j.status)}</span> ` : ""}${isHidden(j) ? '<span class="badge gray">hidden</span> ' : ""}${j.archived_at ? `<span class="badge gray">gone in ${archivedDaysLeft(j)}d</span> ` : ""}${j.posted_at ? "posted " + esc(fmtDate(j.posted_at)) + " · " : ""}found ${esc(ago(j.found_at))}${j.has_tailored ? " · resume ✓" : ""}${j.has_cover ? " · letter ✓" : ""}</div>
+      ${j.archived_at ? "" : j.status === "dismissed" ? "" : j.is_hidden ? `<button class="row-hide" data-unhide="${j.id}" title="Show this job in the list again">Unhide</button>`
         : `<button class="row-hide" data-hide="${j.id}" title="Hide from the list (Show hidden brings it back)">Hide</button>`}
     </li>`).join("");
   $$("#job-list li").forEach((li) => li.addEventListener("click", () => openJob(+li.dataset.id)));
@@ -434,7 +439,9 @@ function renderJobList() {
     e.stopPropagation(); setHidden(+(b.dataset.hide || b.dataset.unhide), !!b.dataset.hide);
   }));
 }
-["#f-status", "#f-sort", "#f-hidden"].forEach((s) => $(s).addEventListener("change", loadJobs));
+// Days until an archived job is deleted for good (the server purges 5 days after archiving it).
+const archivedDaysLeft = (j) => Math.max(0, 5 - Math.floor((Date.now() - new Date(j.archived_at)) / 864e5));
+["#f-status", "#f-sort", "#f-hidden", "#f-archived"].forEach((s) => $(s).addEventListener("change", loadJobs));
 const isHidden = (j) => !!j.is_hidden; // hidden by you, dismissed, or a new job the AI scored below your cutoff
 // Hide / Unhide: hidden jobs stay in the database (scores, letters, emails) but leave the list until "Show hidden".
 async function setHidden(id, hidden) {
@@ -955,6 +962,7 @@ async function loadActivity() {
   const s = await updateRunStatus(); if (!s) return;
   const r = s.last_result;
   $("#last-run").innerHTML = r ? `<b>Last run:</b> ${r.fetched} fetched · ${r.passed_filters} passed filters · ${r.new} new · ${r.ai_scored} AI-scored` +
+    (r.archived || r.purged ? ` · ${r.archived || 0} archived${r.purged ? `, ${r.purged} purged` : ""} (60-day rule)` : "") +
     (Object.keys(r.by_source || {}).length ? `<br>${Object.entries(r.by_source).map(([k, v]) => `${esc(k)}: ${v.fetched} fetched, ${v.new} new`).join(" · ")}` : "") +
     (r.errors.length ? `<br><span style="color:var(--bad)">${r.errors.map(esc).join("<br>")}</span>` : "") : "No runs yet this session.";
   $("#activity-list").innerHTML = s.activity.map((a) => `<li class="${esc(a.level)}">${esc(new Date(a.at).toLocaleString())}  ${esc(a.message)}</li>`).join("");

@@ -289,11 +289,16 @@ hidden_sql = monitor.hidden_sql  # one definition, shared with the "Score new jo
 @app.get("/api/jobs")
 def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: int = 300, show_hidden: bool = False):
     where, args = [], []
+    archived_only = status == "archived"
+    # Archived (60-day rule) jobs live in their own view; nothing else ever shows them.
+    where.append("archived_at IS NOT NULL" if archived_only else "archived_at IS NULL")
     # Hidden jobs stay out of the list unless "Show hidden" is on, or the status filter asks for dismissed jobs.
     hidden_sql_ = hidden_sql()
-    if not show_hidden and status != "dismissed":
+    if not show_hidden and status != "dismissed" and not archived_only:
         where.append(f"NOT {hidden_sql_}")
-    if status == "active":
+    if archived_only:
+        pass
+    elif status == "active":
         # Dismissed jobs are "hidden", so Show hidden brings them back into the Active view too.
         where.append("status IN ('new','saved','applying','applied','interview','offer'" + (",'dismissed')" if show_hidden else ")"))
     elif status != "all":
@@ -304,18 +309,21 @@ def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: in
         args += [f"%{q}%"] * 3
     sql = ("SELECT id, source, title, company, location, is_remote, employment_type, salary_text, salary_min, salary_max, "
            "publisher, posted_at, found_at, status, keyword_score, ai_score, ai_summary, url, apply_url, "
-           f"cover_letter IS NOT NULL AS has_cover, tailored_resume IS NOT NULL AS has_tailored, hidden, {hidden_sql_} AS is_hidden FROM jobs")
+           f"cover_letter IS NOT NULL AS has_cover, tailored_resume IS NOT NULL AS has_tailored, hidden, archived_at, "
+           f"{hidden_sql_} AS is_hidden FROM jobs")
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += f" ORDER BY {SORTS.get(sort, SORTS['best'])} LIMIT ?"
+    sql += " ORDER BY archived_at DESC" if archived_only else f" ORDER BY {SORTS.get(sort, SORTS['best'])}"
+    sql += " LIMIT ?"
     args.append(min(limit, 1000))
     with db.conn() as c:
         rows = c.execute(sql, args).fetchall()
-        counts = dict(c.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status").fetchall())
-        unscored = c.execute(f"SELECT COUNT(*) FROM jobs WHERE status='new' AND ai_score IS NULL AND NOT {hidden_sql_}").fetchone()[0]
-        hidden_count = c.execute(f"SELECT COUNT(*) FROM jobs WHERE {hidden_sql_}").fetchone()[0]
+        counts = dict(c.execute("SELECT status, COUNT(*) FROM jobs WHERE archived_at IS NULL GROUP BY status").fetchall())
+        unscored = c.execute(f"SELECT COUNT(*) FROM jobs WHERE status='new' AND ai_score IS NULL AND archived_at IS NULL AND NOT {hidden_sql_}").fetchone()[0]
+        hidden_count = c.execute(f"SELECT COUNT(*) FROM jobs WHERE archived_at IS NULL AND {hidden_sql_}").fetchone()[0]
+        archived_count = c.execute("SELECT COUNT(*) FROM jobs WHERE archived_at IS NOT NULL").fetchone()[0]
     return {"jobs": [dict(r) | {"is_remote": bool(r["is_remote"]), "is_hidden": bool(r["is_hidden"])} for r in rows],
-            "counts": counts, "unscored": unscored, "hidden_count": hidden_count}
+            "counts": counts, "unscored": unscored, "hidden_count": hidden_count, "archived_count": archived_count}
 
 
 def _get_job(jid: int) -> dict:

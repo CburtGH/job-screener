@@ -133,7 +133,7 @@ the Google token, because the token may be a copy of production's.
 | `app/config.py` | Preferences, app settings (stored in `kv`), secrets (keyring) |
 | `app/sources.py` | Job source fetchers + `make_job()` normalizer + `SOURCES` registry |
 | `app/matcher.py` | Hard filters (`filter_job`) and keyword score (`keyword_score`) |
-| `app/monitor.py` | Pipeline `run_once()`: fetch → filter → dedupe → keyword score → AI score; `refresh_on_startup()` |
+| `app/monitor.py` | Pipeline `run_once()`: archive_stale (60-day rule) → fetch → filter → dedupe → keyword score → AI score; `refresh_on_startup()` |
 | `app/ai.py` | All AI calls (Anthropic API + local llama.cpp server) and their output schemas |
 | `app/local_model.py` | Built-in local model tiers: hardware scan + recommender, llama.cpp/GGUF installer, managed `llama-server` on 127.0.0.1:8899 |
 | `app/gmail.py` | Gmail OAuth, sync, thread parsing, triage, send/draft, archive |
@@ -193,6 +193,12 @@ Job statuses: `new`, `saved`, `applying`, `applied`, `interview`, `offer`, `reje
 `monitor._insert` skips any posting matching one (same source+external_id, or same dedupe_key from any source).
 Pasting a job into Add a job deliberately bypasses that.
 
+**Archived jobs** (60-day rule, `monitor.archive_stale()` at the start of every run): a job found 60+ days ago
+whose status is not one of `saved/applying/applied/interview/offer` gets `archived_at` set — it leaves every
+normal list and count but keeps its scores, letters and linked emails, and shows only when the user ticks
+"Archived" (the list endpoint's `archived` status view, ordered by `archived_at DESC`, badge counts it down). Five days
+after archiving, the next run deletes it for good and records it in `removed_jobs`, so it never comes back.
+
 Current sources (`SOURCES` keys): `jsearch` (Indeed, ZipRecruiter, LinkedIn, Glassdoor via Google for Jobs;
 key from OpenWeb Ninja, `api.openwebninja.com/jsearch/search-v2` with `x-api-key`; a RapidAPI key also works via
 the old `jsearch.p.rapidapi.com/search`, and the channel that accepted the key is remembered in kv
@@ -210,7 +216,7 @@ raise `SourceError` for config problems, register it in `SOURCES`, and mention i
 |---|---|
 | `kv` | JSON key/values: `preferences`, `app_settings`, `gmail_account`, `gmail_last_sync`, `last_fetch:<source>`, `jsearch_channel` |
 | `resumes` | Markdown resumes; exactly one `is_master` |
-| `jobs` | Postings plus scores, Claude summary/strengths/gaps, tailored resume, cover letter, notes, status |
+| `jobs` | Postings plus scores, Claude summary/strengths/gaps, tailored resume, cover letter, notes, status, 60-day archive timestamp (`archived_at`) |
 | `email_threads` | Gmail thread metadata, job link (`link_manual` = user-set), Claude triage fields |
 | `removed_jobs` | Jobs the user removed (source, external_id, dedupe_key, title, company); never re-fetched |
 | `activity` | Activity log (last 500 rows) |
@@ -246,7 +252,7 @@ All under `/api`. Writes require the `X-JobScout: 1` header.
 | `DELETE /api/resumes/{rid}` | Delete |
 | `POST /api/resumes/{rid}/cleanup` | Claude markdown cleanup (returns text; doesn't save) |
 | `GET /api/resumes/{rid}/docx` | Export DOCX |
-| `GET /api/jobs` | List jobs (status filter, search, sort, `show_hidden`) + counts, `hidden_count`, `unscored` |
+| `GET /api/jobs` | List jobs (status filter incl. `archived`, search, sort, `show_hidden`) + counts, `hidden_count`, `archived_count`, `unscored` |
 | `GET /api/jobs/{jid}` | One job |
 | `PATCH /api/jobs/{jid}` | Edit status, notes, tailored resume, cover letter, `hidden` (true = Hide, false = sticky Unhide), … |
 | `DELETE /api/jobs/{jid}` | Remove: delete the job, unlink its emails, add it to `removed_jobs` so it's never fetched again |
