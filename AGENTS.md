@@ -259,7 +259,7 @@ All under `/api`. Writes require the `X-JobScout: 1` header.
 | `POST /api/jobs/import` | Paste a posting; Claude extracts fields |
 | `GET /api/local-llm/status` | Local llama.cpp server: reachability, loaded model ids, configured URL/model (Settings card and setup banner) |
 | `GET /api/local-model/status` | Built-in model wizard state: hardware scan, recommended tier, per-tier install/use state, install progress, managed server state |
-| `POST /api/local-model/install` | Download runtime + GGUF tier (`{"tier": "light|medium|heavy"}`) in a background thread; becomes the default engine when ready |
+| `POST /api/local-model/install` | Download runtime + GGUF tier (`{"tier": "light|medium|heavy|max"}`) in a background thread; becomes the default engine when ready |
 | `POST /api/local-model/use` | Start the managed `llama-server` for an installed tier and point Settings' local-LLM engine at it |
 | `POST /api/local-model/stop` | Stop the managed `llama-server` we launched (frees RAM; a server owned by the other JobScout window is left alone) |
 | `GET /api/claude-code/status` | Whether Claude Code is installed, and its path |
@@ -386,16 +386,19 @@ schemas, ignores extra keys, skips items outside the task (wrong job/thread id),
 
 ### Built-in local model (`app/local_model.py`, Settings card)
 
-- Three optional Qwen3 GGUF tiers served by a jobscout-managed llama.cpp server on `127.0.0.1:8899`
-   (`MANAGED_URL`): light 1.7B-Q8 (~1.7 GB), medium 4B-Q4_K_M (~2.5 GB), heavy 8B-Q4_K_M (~4.7 GB).
+- Four optional GGUF tiers served by a jobscout-managed llama.cpp server on `127.0.0.1:8899`
+   (`MANAGED_URL`): light Qwen3-1.7B-Q8 (~1.7 GB), medium Qwen3-4B-Q4_K_M (~2.5 GB), heavy Qwen3-8B-Q4_K_M
+   (~4.7 GB), max Inkling-2-Mini-UD-Q2_K_XL (26B MoE / 3.4B active, ~8.5 GB, alias `inkling-2-mini`, `-c 4096`).
   Nothing downloads until the user clicks Install. Downloads live in `%LOCALAPPDATA%\JobScout\models\`
   (shared by production and staging), never in the checkout.
 - Hardware scan (`hardware()`, cached): RAM via kernel32, GPUs via `Win32_VideoController` + `nvidia-smi`
   (name/vRAM/vendor, NVIDIA VRAM corrected to nvidia-smi's exact value), free disk. `recommend()` walks
-  heavy→light and returns the first tier whose `min_vram` OR `min_ram` fits with 2 GB disk headroom; the UI
+  max→light and returns the first tier whose `min_vram` OR `min_ram` fits with 2 GB disk headroom; the UI
   always lets the user override (confirm dialog).
 - Vendor-neutral runtime: NVIDIA → CUDA build (+ separate cudart zip, extracted into the same folder),
   AMD/Intel/Arc → Vulkan build, no GPU → CPU build; asset chosen from the newest llama.cpp GitHub release.
+  The cached runtime is refreshed when a tier requires a newer build (tier `min_build` vs `runtime.json` tag;
+  Inkling needs llama.cpp >= b12600).
 - `start_install()` runs in a daemon thread and streams progress into the `_install` dict (UI polls
   `/api/local-model/status`). When done, `start_server(..., apply_engine=True)` launches `llama-server`
   (`-ngl 99 -c 8192 --jinja`), waits for `/v1/models`, then writes `ai_engine=local_builtin`,

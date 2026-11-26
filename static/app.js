@@ -118,7 +118,7 @@ function renderGmailBox() {
   box.innerHTML = `<div class="gmail-state">
     ${g.connected
       ? `<div class="secret-row"><div class="state set">✓ Connected as <b>${esc(g.account || "?")}</b>${g.last_sync ? ` · last sync ${esc(ago(g.last_sync))}` : ""}</div></div>
-         <div class="toolbar"><button id="g-sync">Sync now</button><button id="g-disconnect" class="danger">Disconnect</button></div>`
+         <div class="toolbar"><button id="g-sync">Sync now</button><button id="g-reconnect">Reconnect</button><button id="g-disconnect" class="danger">Disconnect</button></div>`
       : `<div class="small"><b>Step 1.</b> Google OAuth client file: ${g.has_client_secret
             ? '<span class="state set">✓ uploaded</span>'
             : '<span style="color:var(--bad)">needed before you can connect</span>'}</div>
@@ -140,6 +140,7 @@ function renderGmailBox() {
     if (!S.gmail.has_client_secret) { toast("Do step 1 first: get the Google OAuth client file using the setup guide below, then choose it above.", true); return openGuide(); }
     connectGmail(e.target);
   });
+  $("#g-reconnect")?.addEventListener("click", (e) => connectGmail(e.target));
   $("#g-sync")?.addEventListener("click", (e) => busy(e.target, "Syncing…", async () => {
     const s = await api("/api/gmail/sync", { method: "POST" }); toast(`${s.new} new, ${s.updated} updated, ${s.triaged} sorted`);
     await loadGmailStatus(); updateMailBadge();
