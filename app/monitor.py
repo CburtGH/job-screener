@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import traceback
+from datetime import datetime, timedelta, timezone
 
 from . import ai, config, db, matcher, resume, sources
 
@@ -29,7 +30,7 @@ def _insert(job: dict) -> int | None:
         return cur.lastrowid
 
 
-def ai_score_job(job_id: int) -> dict:
+def ai_score_job(job_id: int, context: str | None = None) -> dict:
     master = resume.get_master()
     if not master:
         raise ai.AIError("Add a resume first (Resume tab).")
@@ -38,39 +39,58 @@ def ai_score_job(job_id: int) -> dict:
     if not row:
         raise KeyError(job_id)
     job = db.row_to_job(row)
-    res = ai.score_job(job, master["content"], config.get_preferences())
+    res = ai.score_job(job, master["content"], config.get_preferences(), context=context)
     save_score(job_id, res)
     return res.model_dump()
 
 
-def save_score(job_id: int, res: ai.MatchResult) -> None:
-    """Store a Claude match score (from the API or from a Claude Code scoring session)."""
+def save_score(job_id: int, res: ai.MatchResult, scorer: str | None = None) -> None:
+    """Store a Claude match score (from the API or from a Claude Code scoring session).
+    scored_by records which engine produced it (ai.engine_label(), or an explicit override)."""
     score = max(0, min(100, int(res.score)))
     with db.conn() as c:
         c.execute(
-            "UPDATE jobs SET ai_score=?, ai_summary=?, ai_strengths=?, ai_gaps=? WHERE id=?",
-            (score, f"[{res.recommendation.upper()}] {res.summary}", json.dumps(res.strengths), json.dumps(res.gaps), job_id),
+            "UPDATE jobs SET ai_score=?, ai_summary=?, ai_strengths=?, ai_gaps=?, scored_by=? WHERE id=?",
+            (score, f"[{res.recommendation.upper()}] {res.summary}", json.dumps(res.strengths), json.dumps(res.gaps),
+             scorer or ai.engine_label(), job_id),
         )
+
+
+ARCHIVE_AFTER_DAYS = 60
+PURGE_AFTER_DAYS = 5
+# Statuses the 60-day rule never touches: anything you acted on stays (saved = bookmarked, applying/applied/
+# interview/offer = real progress). Everything else (new, low_match, rejected, dismissed) goes stale.
+ARCHIVE_KEEP = ("saved", "applying", "applied", "interview", "offer")
+
+
+def archive_stale() -> tuple[int, int]:
+    """The 60-day rule, run at the start of every Refresh: a job found 60+ days ago that you never marked
+    applied (see ARCHIVE_KEEP) is soft-deleted (archived_at set) -> it leaves the list but its scores, letters
+    and linked emails survive while it shows under "Archived". Five days later it is deleted for good and
+    recorded in removed_jobs, so the pipeline never fetches it back. Returns (archived, purged)."""
+    now = db.now_iso()
+    arch_cut = (datetime.now(timezone.utc) - timedelta(days=ARCHIVE_AFTER_DAYS)).isoformat(timespec="seconds")
+    purge_cut = (datetime.now(timezone.utc) - timedelta(days=PURGE_AFTER_DAYS)).isoformat(timespec="seconds")
+    with db.conn() as c:
+        archived = c.execute(
+            f"UPDATE jobs SET archived_at=? WHERE archived_at IS NULL AND found_at < ? "
+            f"AND status NOT IN ({', '.join('?' for _ in ARCHIVE_KEEP)})",
+            [now, arch_cut, *ARCHIVE_KEEP],
+        ).rowcount
+        stale = c.execute("SELECT id, source, external_id, dedupe_key, title, company FROM jobs "
+                          "WHERE archived_at IS NOT NULL AND archived_at < ?", (purge_cut,)).fetchall()
+        for r in stale:
+            c.execute("INSERT OR IGNORE INTO removed_jobs(source, external_id, dedupe_key, title, company, removed_at) "
+                      "VALUES(?,?,?,?,?,?)", (r["source"], r["external_id"], r["dedupe_key"], r["title"], r["company"], now))
+            c.execute("DELETE FROM jobs WHERE id=?", (r["id"],))  # email_threads.job_id -> NULL (linked email stays)
+        return archived, len(stale)
 
 
 def hidden_sql() -> str:
     """SQL condition for jobs kept out of the list unless "Show hidden" is on:
-      - the user hid it (hidden = 1), or it's dismissed;
-      - a new job Claude scored below hide_below_score (default 70);
-      - a new job Claude hasn't scored, with a keyword score below hide_below_keyword_score (default 30).
-    A Claude score, when there is one, decides on its own (a strong Claude score beats a weak keyword match).
-    Unhide sets hidden = -1, which exempts the job from both score rules. Either cutoff at 0 turns that rule off.
-    Reads preferences (its own db connection): call it before taking the db lock."""
-    prefs = config.get_preferences()
-    ai_cut = float(prefs.get("hide_below_score") or 0)
-    kw_cut = float(prefs.get("hide_below_keyword_score") or 0)
-    rules = []
-    if ai_cut > 0:
-        rules.append(f"(ai_score IS NOT NULL AND ai_score < {ai_cut:g})")
-    if kw_cut > 0:
-        rules.append(f"(ai_score IS NULL AND COALESCE(keyword_score, 0) < {kw_cut:g})")
-    low = f" OR (hidden = 0 AND status = 'new' AND ({' OR '.join(rules)}))" if rules else ""
-    return f"(hidden = 1 OR status = 'dismissed'{low})"
+    the user clicked Hide (hidden = 1) or dismissed the job. (Score-threshold auto-hiding was
+    dropped in favour of the score range filter on the Jobs tab - every job stays visible by default.)"""
+    return "(hidden = 1 OR status = 'dismissed')"
 
 
 def unscored_jobs(limit: int | None = None) -> list[dict]:
@@ -78,7 +98,7 @@ def unscored_jobs(limit: int | None = None) -> list[dict]:
     batch covers). limit=None means all of them. Jobs hidden by the keyword cutoff are skipped, so no AI calls
     are spent on them."""
     hidden = hidden_sql()
-    sql = f"SELECT * FROM jobs WHERE status='new' AND ai_score IS NULL AND NOT {hidden} " \
+    sql = f"SELECT * FROM jobs WHERE status='new' AND ai_score IS NULL AND archived_at IS NULL AND NOT {hidden} " \
           "ORDER BY keyword_score DESC, found_at DESC"
     args: tuple = () if limit is None else (limit,)
     if limit is not None:
@@ -132,8 +152,11 @@ def run_once() -> dict:
     if not _run_lock.acquire(blocking=False):
         return {"skipped": "a run is already in progress"}
     state["running"] = True
-    result = {"fetched": 0, "passed_filters": 0, "new": 0, "low_match": 0, "ai_scored": 0, "errors": [], "by_source": {}}
+    result = {"fetched": 0, "passed_filters": 0, "new": 0, "low_match": 0, "ai_scored": 0, "archived": 0, "purged": 0, "errors": [], "by_source": {}}
     try:
+        result["archived"], result["purged"] = archive_stale()
+        if result["archived"] or result["purged"]:
+            db.log(f"60-day rule: {result['archived']} job(s) archived, {result['purged']} purged for good")
         prefs = config.get_preferences()
         master = resume.get_master()
         skills = matcher.resume_skills(master["content"]) if master else []

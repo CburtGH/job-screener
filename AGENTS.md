@@ -133,7 +133,7 @@ the Google token, because the token may be a copy of production's.
 | `app/config.py` | Preferences, app settings (stored in `kv`), secrets (keyring) |
 | `app/sources.py` | Job source fetchers + `make_job()` normalizer + `SOURCES` registry |
 | `app/matcher.py` | Hard filters (`filter_job`) and keyword score (`keyword_score`) |
-| `app/monitor.py` | Pipeline `run_once()`: fetch → filter → dedupe → keyword score → AI score; `refresh_on_startup()` |
+| `app/monitor.py` | Pipeline `run_once()`: archive_stale (60-day rule) → fetch → filter → dedupe → keyword score → AI score; `refresh_on_startup()` |
 | `app/ai.py` | All AI calls (Anthropic API + local llama.cpp server) and their output schemas |
 | `app/local_model.py` | Built-in local model tiers: hardware scan + recommender, llama.cpp/GGUF installer, managed `llama-server` on 127.0.0.1:8899 |
 | `app/gmail.py` | Gmail OAuth, sync, thread parsing, triage, send/draft, archive |
@@ -187,11 +187,18 @@ Job statuses: `new`, `saved`, `applying`, `applied`, `interview`, `offer`, `reje
 
 **Hidden jobs** stay in the database but leave the list until the user ticks "Show hidden".
 `monitor.hidden_sql()` is the single definition (the list, the counts and the "Score new jobs" batch all use it):
-`jobs.hidden = 1` (user clicked Hide), status `dismissed`, or a `new` job whose `ai_score` is below
-`hide_below_score` (default 70), or, when the AI hasn't scored it, whose `keyword_score` is below
-`hide_below_keyword_score` (default 30). Unhide sets `hidden = -1`, which exempts the job from both score rules. **Removed jobs** are deleted and recorded in `removed_jobs`;
+`jobs.hidden = 1` (user clicked Hide) or status `dismissed`. Score-threshold auto-hiding was **removed**
+(`hide_below_score` / `hide_below_keyword_score` are gone): instead the Jobs toolbar has a score range filter
+(`score_min` / `score_max` query params on `GET /api/jobs`, applied to `COALESCE(ai_score, keyword_score)` —
+the number the list pill shows). **Removed jobs** are deleted and recorded in `removed_jobs`;
 `monitor._insert` skips any posting matching one (same source+external_id, or same dedupe_key from any source).
 Pasting a job into Add a job deliberately bypasses that.
+
+**Archived jobs** (60-day rule, `monitor.archive_stale()` at the start of every run): a job found 60+ days ago
+whose status is not one of `saved/applying/applied/interview/offer` gets `archived_at` set — it leaves every
+normal list and count but keeps its scores, letters and linked emails, and shows only when the user ticks
+"Archived" (the list endpoint's `archived` status view, ordered by `archived_at DESC`, badge counts it down). Five days
+after archiving, the next run deletes it for good and records it in `removed_jobs`, so it never comes back.
 
 Current sources (`SOURCES` keys): `jsearch` (Indeed, ZipRecruiter, LinkedIn, Glassdoor via Google for Jobs;
 key from OpenWeb Ninja, `api.openwebninja.com/jsearch/search-v2` with `x-api-key`; a RapidAPI key also works via
@@ -210,7 +217,7 @@ raise `SourceError` for config problems, register it in `SOURCES`, and mention i
 |---|---|
 | `kv` | JSON key/values: `preferences`, `app_settings`, `gmail_account`, `gmail_last_sync`, `last_fetch:<source>`, `jsearch_channel` |
 | `resumes` | Markdown resumes; exactly one `is_master` |
-| `jobs` | Postings plus scores, Claude summary/strengths/gaps, tailored resume, cover letter, notes, status |
+| `jobs` | Postings plus scores, Claude summary/strengths/gaps, tailored resume, cover letter, notes, status, 60-day archive timestamp (`archived_at`), scoring engine label (`scored_by`, from `ai.engine_label()`) |
 | `email_threads` | Gmail thread metadata, job link (`link_manual` = user-set), Claude triage fields |
 | `removed_jobs` | Jobs the user removed (source, external_id, dedupe_key, title, company); never re-fetched |
 | `activity` | Activity log (last 500 rows) |
@@ -246,11 +253,11 @@ All under `/api`. Writes require the `X-JobScout: 1` header.
 | `DELETE /api/resumes/{rid}` | Delete |
 | `POST /api/resumes/{rid}/cleanup` | Claude markdown cleanup (returns text; doesn't save) |
 | `GET /api/resumes/{rid}/docx` | Export DOCX |
-| `GET /api/jobs` | List jobs (status filter, search, sort, `show_hidden`) + counts, `hidden_count`, `unscored` |
+| `GET /api/jobs` | List jobs (status filter incl. `archived`, search, sort, `show_hidden`) + counts, `hidden_count`, `archived_count`, `unscored` |
 | `GET /api/jobs/{jid}` | One job |
 | `PATCH /api/jobs/{jid}` | Edit status, notes, tailored resume, cover letter, `hidden` (true = Hide, false = sticky Unhide), … |
 | `DELETE /api/jobs/{jid}` | Remove: delete the job, unlink its emails, add it to `removed_jobs` so it's never fetched again |
-| `POST /api/jobs/{jid}/score` | Claude match score |
+| `POST /api/jobs/{jid}/score` | Claude match score (optional body `{context}` = candidate revision notes, used by the light/medium "notes box" second pass) |
 | `POST /api/ai/score-unscored` | Score-now catch-up: every new visible unscored job, off-thread (local uncapped, API capped; 409 if a run holds the pipeline; rejected for Claude Code) |
 | `POST /api/jobs/{jid}/tailor` | Claude resume tailoring |
 | `POST /api/jobs/{jid}/cover-letter` | Claude cover letter |
@@ -259,7 +266,7 @@ All under `/api`. Writes require the `X-JobScout: 1` header.
 | `POST /api/jobs/import` | Paste a posting; Claude extracts fields |
 | `GET /api/local-llm/status` | Local llama.cpp server: reachability, loaded model ids, configured URL/model (Settings card and setup banner) |
 | `GET /api/local-model/status` | Built-in model wizard state: hardware scan, recommended tier, per-tier install/use state, install progress, managed server state |
-| `POST /api/local-model/install` | Download runtime + GGUF tier (`{"tier": "light|medium|heavy"}`) in a background thread; becomes the default engine when ready |
+| `POST /api/local-model/install` | Download runtime + GGUF tier (`{"tier": "light|medium|heavy|max"}`) in a background thread; becomes the default engine when ready |
 | `POST /api/local-model/use` | Start the managed `llama-server` for an installed tier and point Settings' local-LLM engine at it |
 | `POST /api/local-model/stop` | Stop the managed `llama-server` we launched (frees RAM; a server owned by the other JobScout window is left alone) |
 | `GET /api/claude-code/status` | Whether Claude Code is installed, and its path |
@@ -309,13 +316,16 @@ so it never auto-opens again.
 **Preferences** (`config.DEFAULT_PREFERENCES`, the Preferences tab): `target_titles`, `title_must_include_any`,
 `title_role_any`, `title_exclude`, `keywords_boost`, `keywords_exclude`, `remote_only`, `locations`, `country`,
 `employment_types`, `min_salary`, `posted_within_days`, `min_keyword_score`, `ai_score_enabled`,
-`ai_score_max_per_run`, `hide_below_score`, `hide_below_keyword_score`, `enabled_sources`.
+`ai_score_max_per_run`, `enabled_sources`.
 
 **App settings** (`config.DEFAULT_APP_SETTINGS`, the Settings tab): `model`, `effort`, `refresh_on_startup`,
 `applicant_name`, `applicant_email`, `applicant_phone`, `applicant_location`, `applicant_links`,
 `cover_letter_tone`, `tailoring_rules`, `gmail_days`, `gmail_query`, `email_signature`,
 `claude_code_enabled`, `claude_code_path`, `debug_panel`, `log_level`, `ai_engine`, `local_llm_url`,
-`local_llm_model`, `builtin_model`, `local_llm_wait`. Two of them default per environment (`config.apply_env_defaults()`):
+`local_llm_model`, `builtin_model`, `local_llm_wait`, `a11y_text_size` (normal/large/largest),
+`a11y_high_contrast`, `a11y_reduce_motion`. The three `a11y_*` keys toggle body classes in
+`static/app.js` (`applyA11y`) on top of native OS accessibility (Windows text zoom, forced-colors high-contrast
+themes, reduced-motion — all respected automatically by CSS media queries). Two of them default per environment (`config.apply_env_defaults()`):
 `refresh_on_startup` on in production / off in staging, `debug_panel` the other way; each instance resets them
 once at startup and after "copy production data into staging" (`env_tools`), later user edits stick.
 
@@ -386,16 +396,21 @@ schemas, ignores extra keys, skips items outside the task (wrong job/thread id),
 
 ### Built-in local model (`app/local_model.py`, Settings card)
 
-- Three optional Qwen3 GGUF tiers served by a jobscout-managed llama.cpp server on `127.0.0.1:8899`
-   (`MANAGED_URL`): light 1.7B-Q8 (~1.7 GB), medium 4B-Q4_K_M (~2.5 GB), heavy 8B-Q4_K_M (~4.7 GB).
+- Four optional GGUF tiers served by a jobscout-managed llama.cpp server on `127.0.0.1:8899`
+   (`MANAGED_URL`): light Qwen3-1.7B-Q8 (~1.7 GB), medium Qwen3-4B-Q4_K_M (~2.5 GB), heavy Qwen3-8B-Q4_K_M
+   (~4.7 GB), max Inkling-2-Mini-UD-Q2_K_XL (26B MoE / 3.4B active, ~8.5 GB, alias `inkling-2-mini`, `-c 8192`,
+   `--cpu-moe` so the experts stay in RAM and the GPU only carries dense layers).
   Nothing downloads until the user clicks Install. Downloads live in `%LOCALAPPDATA%\JobScout\models\`
   (shared by production and staging), never in the checkout.
 - Hardware scan (`hardware()`, cached): RAM via kernel32, GPUs via `Win32_VideoController` + `nvidia-smi`
   (name/vRAM/vendor, NVIDIA VRAM corrected to nvidia-smi's exact value), free disk. `recommend()` walks
-  heavy→light and returns the first tier whose `min_vram` OR `min_ram` fits with 2 GB disk headroom; the UI
+   max→light and returns the first tier that fits with 2 GB disk headroom: `min_vram` OR `min_ram` normally, but a
+   tier with `"gate": "and"` (max) needs both `min_vram` AND `min_ram`; the UI
   always lets the user override (confirm dialog).
 - Vendor-neutral runtime: NVIDIA → CUDA build (+ separate cudart zip, extracted into the same folder),
   AMD/Intel/Arc → Vulkan build, no GPU → CPU build; asset chosen from the newest llama.cpp GitHub release.
+  The cached runtime is refreshed when a tier requires a newer build (tier `min_build` vs `runtime.json` tag;
+  Inkling needs llama.cpp >= b12600).
 - `start_install()` runs in a daemon thread and streams progress into the `_install` dict (UI polls
   `/api/local-model/status`). When done, `start_server(..., apply_engine=True)` launches `llama-server`
   (`-ngl 99 -c 8192 --jinja`), waits for `/v1/models`, then writes `ai_engine=local_builtin`,

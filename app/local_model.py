@@ -1,4 +1,4 @@
-"""Built-in local model tiers: light / medium / heavy Qwen3 GGUFs served by a managed llama.cpp server.
+"""Built-in local model tiers: light / medium / heavy Qwen3 + MAX Inkling-2-Mini GGUFs served by a managed llama.cpp server.
 
 The app downloads the llama.cpp Windows runtime + one GGUF into %LOCALAPPDATA%\\JobScout\\models (shared by
 production and staging), picks a tier from a hardware scan (RAM / GPU VRAM / free disk) with a user override,
@@ -43,6 +43,13 @@ TIERS: dict[str, dict] = {
     "heavy": {
         "label": "Heavy", "blurb": "Most accurate; an 8 GB GPU fits it entirely",
         "gguf": "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf", "size": 4.7 * 2**30, "min_ram": 16, "min_vram": 6,
+    },
+    "max": {
+        "label": "MAX", "blurb": "Inkling 2 Mini: 26B MoE with only 3.4B active - top quality, built for 8 GB GPUs",
+        "gguf": "unsloth/Inkling-2-Mini-GGUF/Inkling-2-Mini-UD-Q2_K_XL.gguf", "size": 8.5 * 2**30,
+        "min_ram": 12, "min_vram": 8, "alias": "inkling-2-mini", "min_build": 12600, "ctx": 8192,
+        "gate": "and",  # really needs BOTH: the experts sit in RAM (--cpu-moe) and the dense layers want the GPU
+        "flags": ["--cpu-moe"],  # keep the MoE experts in RAM: ~2-3 GB VRAM and a far gentler power draw
     },
 }
 
@@ -143,8 +150,9 @@ def hardware() -> dict:
 def recommend(hw: dict | None = None) -> str:
     hw = hw or hardware()
     for tier, spec in reversed(list(TIERS.items())):
-        if (hw["vram_gb"] >= spec["min_vram"] or hw["ram_gb"] >= spec["min_ram"]) and (
-                hw["free_gb"] >= round(spec["size"] / 2**30) + 2):
+        enough = (hw["vram_gb"] >= spec["min_vram"] or hw["ram_gb"] >= spec["min_ram"]) if spec.get("gate") != "and" \
+            else (hw["vram_gb"] >= spec["min_vram"] and hw["ram_gb"] >= spec["min_ram"])
+        if enough and hw["free_gb"] >= round(spec["size"] / 2**30) + 2:
             return tier
     return "light"
 
@@ -186,7 +194,17 @@ def _install_worker(tid: str) -> None:
     global _install
     try:
         hw = hardware()
-        if not (RUNTIME / "llama-server.exe").exists():
+        spec = TIERS[tid]
+        # Inkling needs a recent llama.cpp: force a refresh when the cached build predates the tier's min_build.
+        need_runtime = not (RUNTIME / "llama-server.exe").exists()
+        if not need_runtime and spec.get("min_build"):
+            try:
+                tag = json.loads((RUNTIME / "runtime.json").read_text()).get("tag", "b0")
+                need_runtime = int(tag.lstrip("b") or 0) < spec["min_build"]
+            except (OSError, ValueError, json.JSONDecodeError):
+                need_runtime = True
+        if need_runtime:
+            shutil.rmtree(RUNTIME, ignore_errors=True)
             _install["phase"] = "runtime"
             url, tag, needs_cudart = runtime_zip(hw["backend"])
             zpath = LOCAL / "llama-runtime.zip"
@@ -206,7 +224,6 @@ def _install_worker(tid: str) -> None:
             zpath.unlink(missing_ok=True)
             (RUNTIME / "runtime.json").write_text(json.dumps({"tag": tag}))
         _install["phase"] = "model"
-        spec = TIERS[tid]
         model = MODEL_DIR / Path(spec["gguf"]).name
         if not model.exists():
             repo_path, _, fname = spec["gguf"].rpartition("/")
@@ -260,6 +277,13 @@ def model_id() -> str | None:
         return None
 
 
+def current_tier() -> str | None:
+    """The tier that answers AI calls right now: the running managed server's, else the user's chosen tier."""
+    if _server["tier"] and running():
+        return _server["tier"]
+    return _kv().get("tier")
+
+
 def start_server(tid: str, apply_engine: bool = False) -> str | None:
     """Bring up the managed llama-server for an installed tier. When apply_engine, the tier also becomes
     the Settings choice (local LLM pointed at the managed URL). Returns an error string, or None once started."""
@@ -273,9 +297,11 @@ def start_server(tid: str, apply_engine: bool = False) -> str | None:
         return None
     exe = RUNTIME / "llama-server.exe"
     model = MODEL_DIR / Path(TIERS[tid]["gguf"]).name
-    proc = subprocess.Popen([str(exe), "-m", str(model), "--alias", f"qwen3-{tid}",
+    spec = TIERS[tid]
+    proc = subprocess.Popen([str(exe), "-m", str(model), "--alias", spec.get("alias", f"qwen3-{tid}"),
                              "--host", "127.0.0.1", "--port", str(PORT),
-                             "-ngl", "99", "-c", "8192", "--jinja"], creationflags=NO_WINDOW)
+                             "-ngl", "99", "-c", str(spec.get("ctx", 8192)), "--jinja", *spec.get("flags", [])],
+                            creationflags=NO_WINDOW)
     _server.update({"proc": proc, "tier": tid, "adopted": False})
     db.log(f"Built-in model: started llama-server ({TIERS[tid]['label']}) on port {PORT}")
     if apply_engine:

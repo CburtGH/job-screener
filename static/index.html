@@ -11,7 +11,7 @@
 <body>
   <header class="topbar">
     <div class="brand">JobScout</div>
-    <nav id="tabs">
+    <nav id="tabs" aria-label="Main sections">
       <button data-tab="jobs" class="active">Jobs</button>
       <button data-tab="mail">Mail <span id="mail-badge" class="count-badge hidden"></span></button>
       <button data-tab="resume">Resume</button>
@@ -51,7 +51,14 @@
             <option value="posted">Newest posted</option>
           </select>
           <input id="f-q" type="search" placeholder="Search title, company, text">
+          <span class="score-range" title="Only show jobs whose score (AI match, or keyword until the AI scores one) falls inside this range; drag the sliders or type exact numbers">
+            Score
+            <span class="range-ctl"><input id="s-score-min" type="range" min="0" max="100" value="0" step="5" aria-label="Minimum score"><input id="f-score-min" class="range-num" type="number" min="0" max="100" placeholder="min" aria-label="Minimum score"></span>
+            –
+            <span class="range-ctl"><input id="s-score-max" type="range" min="0" max="100" value="100" step="5" aria-label="Maximum score"><input id="f-score-max" class="range-num" type="number" min="0" max="100" placeholder="max" aria-label="Maximum score"></span>
+          </span>
           <label class="check small" title="Hidden and dismissed jobs"><input type="checkbox" id="f-hidden"> Show hidden <span id="hidden-count" class="muted"></span></label>
+          <label class="check small" title="Jobs 60+ days old that were never marked applied; deleted for good 5 days after archiving"><input type="checkbox" id="f-archived"> Archived <span id="archived-count" class="muted"></span></label>
         </div>
         <div class="toolbar">
           <button id="add-job">+ Add a job</button>
@@ -181,10 +188,6 @@
           <input name="min_keyword_score" type="number" min="0" max="100"></label>
         <label class="check"><input type="checkbox" name="ai_score_enabled"> Score new jobs with the AI Agent automatically <span class="hint">on startup and after every Refresh, the whole unscored backlog; the local LLM has no cap</span></label>
         <label>Max AI scores per run <span class="hint">Anthropic API engine + Claude Code batch only; local LLM scores every job</span><input name="ai_score_max_per_run" type="number" min="0" max="100"></label>
-        <label>Hide new jobs the AI scores below <span class="hint">0 = never; "Show hidden" on the Jobs tab shows them</span>
-          <input name="hide_below_score" type="number" min="0" max="100"></label>
-        <label>Hide new unscored jobs with keyword score below <span class="hint">0 = never; once the AI scores a job, its AI score decides</span>
-          <input name="hide_below_keyword_score" type="number" min="0" max="100"></label>
       </div>
       <div class="stack">
         <b>Sources</b>
@@ -252,6 +255,7 @@
           <h2>Built-in local model <span class="hint" title="JobScout can run an AI model right on this computer with its own small runtime (llama.cpp). No API key, no token costs, works offline. Nothing is downloaded until you click Install.">Optional AI on this machine — no key, no token cost</span></h2>
           <p id="lm-hw" class="small muted">Checking your hardware…</p>
           <div id="lm-tiers" class="lm-tiers"></div>
+          <p class="small lm-warn">⚠ AI makes mistakes — review every score, resume and letter before submitting anything to a live site.</p>
           <div id="lm-progress" class="lm-progress hidden">
             <div class="small" id="lm-phase">Preparing…</div>
             <progress id="lm-bar" max="100" value="0"></progress><span id="lm-pct" class="small muted"></span>
@@ -309,6 +313,13 @@
         <label class="check"><input type="checkbox" name="refresh_on_startup"> Check jobs and sync Gmail once when JobScout opens</label>
         <label>Gmail sync window (days) <input name="gmail_days" type="number" min="7" max="365"></label>
         <label class="span2">Gmail search for job mail <span class="hint">Gmail search syntax; empty = built-in default (shown as placeholder)</span><textarea name="gmail_query" rows="3" id="gmail-query"></textarea></label>
+        <h2 class="span2">Accessibility <span class="hint">JobScout also follows Windows automatically: system text zoom, screen readers, Windows high-contrast themes (forced colors) and reduced motion. These switches add to that, just for this app.</span></h2>
+        <label>Text size <span class="hint">scales the whole window, including the job list and previews</span>
+          <select name="a11y_text_size"><option value="normal">Normal</option><option value="large">Large</option><option value="largest">Largest</option></select></label>
+        <label class="check">High contrast <span class="hint">darker text, stronger borders, no shadows — overrides the light/dark theme</span>
+          <input type="checkbox" name="a11y_high_contrast"></label>
+        <label class="check">Reduce motion <span class="hint">turns off all animations and transitions (Windows Settings > Accessibility > Visual effects does this system-wide)</span>
+          <input type="checkbox" name="a11y_reduce_motion"></label>
         <h2 class="span2">Diagnostics</h2>
         <label class="check"><input type="checkbox" name="debug_panel"> Show the debug panel (Console / Network) at the bottom</label>
         <label>Log level
@@ -534,7 +545,7 @@
     </div>
   </dialog>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="/static/vendor/xterm/xterm.js"></script>
   <script src="/static/vendor/xterm/addon-fit.js"></script>
   <script src="/static/app.js"></script>

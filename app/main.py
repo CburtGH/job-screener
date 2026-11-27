@@ -287,13 +287,29 @@ hidden_sql = monitor.hidden_sql  # one definition, shared with the "Score new jo
 
 
 @app.get("/api/jobs")
-def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: int = 300, show_hidden: bool = False):
+def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: int = 300, show_hidden: bool = False,
+              score_min: int | None = None, score_max: int | None = None):
     where, args = [], []
+    archived_only = status == "archived"
+    # Archived (60-day rule) jobs live in their own view; nothing else ever shows them.
+    where.append("archived_at IS NOT NULL" if archived_only else "archived_at IS NULL")
+    # Score range applies to the number the list shows: AI score, or keyword score until it exists.
+    if score_min is not None or score_max is not None:
+        shown = "COALESCE(ai_score, keyword_score)"
+        where.append(f"{shown} IS NOT NULL")
+        if score_min is not None:
+            where.append(f"{shown} >= ?")
+            args.append(score_min)
+        if score_max is not None:
+            where.append(f"{shown} <= ?")
+            args.append(score_max)
     # Hidden jobs stay out of the list unless "Show hidden" is on, or the status filter asks for dismissed jobs.
     hidden_sql_ = hidden_sql()
-    if not show_hidden and status != "dismissed":
+    if not show_hidden and status != "dismissed" and not archived_only:
         where.append(f"NOT {hidden_sql_}")
-    if status == "active":
+    if archived_only:
+        pass
+    elif status == "active":
         # Dismissed jobs are "hidden", so Show hidden brings them back into the Active view too.
         where.append("status IN ('new','saved','applying','applied','interview','offer'" + (",'dismissed')" if show_hidden else ")"))
     elif status != "all":
@@ -303,19 +319,22 @@ def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: in
         where.append("(title LIKE ? OR company LIKE ? OR description LIKE ?)")
         args += [f"%{q}%"] * 3
     sql = ("SELECT id, source, title, company, location, is_remote, employment_type, salary_text, salary_min, salary_max, "
-           "publisher, posted_at, found_at, status, keyword_score, ai_score, ai_summary, url, apply_url, "
-           f"cover_letter IS NOT NULL AS has_cover, tailored_resume IS NOT NULL AS has_tailored, hidden, {hidden_sql_} AS is_hidden FROM jobs")
+           "publisher, posted_at, found_at, status, keyword_score, ai_score, ai_summary, scored_by, url, apply_url, "
+           f"cover_letter IS NOT NULL AS has_cover, tailored_resume IS NOT NULL AS has_tailored, hidden, archived_at, "
+           f"{hidden_sql_} AS is_hidden FROM jobs")
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += f" ORDER BY {SORTS.get(sort, SORTS['best'])} LIMIT ?"
+    sql += " ORDER BY archived_at DESC" if archived_only else f" ORDER BY {SORTS.get(sort, SORTS['best'])}"
+    sql += " LIMIT ?"
     args.append(min(limit, 1000))
     with db.conn() as c:
         rows = c.execute(sql, args).fetchall()
-        counts = dict(c.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status").fetchall())
-        unscored = c.execute(f"SELECT COUNT(*) FROM jobs WHERE status='new' AND ai_score IS NULL AND NOT {hidden_sql_}").fetchone()[0]
-        hidden_count = c.execute(f"SELECT COUNT(*) FROM jobs WHERE {hidden_sql_}").fetchone()[0]
+        counts = dict(c.execute("SELECT status, COUNT(*) FROM jobs WHERE archived_at IS NULL GROUP BY status").fetchall())
+        unscored = c.execute(f"SELECT COUNT(*) FROM jobs WHERE status='new' AND ai_score IS NULL AND archived_at IS NULL AND NOT {hidden_sql_}").fetchone()[0]
+        hidden_count = c.execute(f"SELECT COUNT(*) FROM jobs WHERE archived_at IS NULL AND {hidden_sql_}").fetchone()[0]
+        archived_count = c.execute("SELECT COUNT(*) FROM jobs WHERE archived_at IS NOT NULL").fetchone()[0]
     return {"jobs": [dict(r) | {"is_remote": bool(r["is_remote"]), "is_hidden": bool(r["is_hidden"])} for r in rows],
-            "counts": counts, "unscored": unscored, "hidden_count": hidden_count}
+            "counts": counts, "unscored": unscored, "hidden_count": hidden_count, "archived_count": archived_count}
 
 
 def _get_job(jid: int) -> dict:
@@ -343,8 +362,8 @@ def patch_job(jid: int, values: dict):
     values = {k: v for k, v in values.items() if k in EDITABLE_JOB_FIELDS}
     if "resume_changes" in values:
         values["resume_changes"] = json.dumps([str(x) for x in (values["resume_changes"] or [])])
-    if "hidden" in values:  # Unhide is sticky (-1), so a low score doesn't hide it again
-        values["hidden"] = 1 if values["hidden"] else -1
+    if "hidden" in values:  # 1 = user hid it, 0 = visible (legacy -1 rows read as visible)
+        values["hidden"] = 1 if values["hidden"] else 0
     if not values:
         return _get_job(jid)
     if values.get("status") == "applied":
@@ -377,9 +396,10 @@ def _master_or_400() -> dict:
 
 
 @app.post("/api/jobs/{jid}/score")
-async def score_job(jid: int):
+async def score_job(jid: int, body: dict | None = None):
+    context = (body or {}).get("context") or None
     try:
-        return await run_in_threadpool(monitor.ai_score_job, jid)
+        return await run_in_threadpool(monitor.ai_score_job, jid, context)
     except ai.AIError as e:
         raise HTTPException(400, str(e))
 
@@ -719,7 +739,7 @@ def _apply_result(s) -> dict:
                 item.setdefault("is_remote", False)
                 item.setdefault("strengths", [])
                 item.setdefault("gaps", [])
-                monitor.save_score(jid, _fields(ai.MatchResult, item))
+                monitor.save_score(jid, _fields(ai.MatchResult, item), scorer="Claude Code")
                 saved += 1
             except (TypeError, ValueError) as e:
                 problems.append(f"job {item.get('job_id')}: {_first_line(e)}")

@@ -82,7 +82,10 @@ const S = { settings: null, jobs: [], currentJob: null, jobSubtab: "description"
 
 // ---------- tabs ----------
 function showTab(name) {
-  $$("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  $$("#tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    if (b.dataset.tab === name) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   $$(".tab").forEach((t) => t.classList.toggle("hidden", t.id !== "tab-" + name));
   if (name === "mail") loadMail();
   if (name === "resume") loadResumes();
@@ -91,6 +94,29 @@ function showTab(name) {
   if (name === "jobs") loadJobs();
 }
 $$("#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// ---------- accessibility ----------
+// These switches add to (never replace) the OS: Windows text zoom, Narrator/NVDA, forced-colors
+// themes and prefers-reduced-motion are respected by the CSS directly; body classes apply app-level extras.
+function applyA11y(app) {
+  const b = document.body;
+  b.classList.toggle("text-large", app.a11y_text_size === "large");
+  b.classList.toggle("text-largest", app.a11y_text_size === "largest");
+  b.classList.toggle("high-contrast", !!app.a11y_high_contrast);
+  b.classList.toggle("reduce-motion", !!app.a11y_reduce_motion);
+}
+api("/api/settings").then((s) => applyA11y(s.app)).catch(() => {});
+
+// click-activated rows are keyboard-operable too (Enter/Space)
+function keyActivate(els, fn) {
+  els.forEach((el) => {
+    el.tabIndex = 0;
+    el.addEventListener("click", () => fn(el));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(el); }
+    });
+  });
+}
 
 // ---------- settings ----------
 async function loadSettings() {
@@ -118,7 +144,7 @@ function renderGmailBox() {
   box.innerHTML = `<div class="gmail-state">
     ${g.connected
       ? `<div class="secret-row"><div class="state set">✓ Connected as <b>${esc(g.account || "?")}</b>${g.last_sync ? ` · last sync ${esc(ago(g.last_sync))}` : ""}</div></div>
-         <div class="toolbar"><button id="g-sync">Sync now</button><button id="g-disconnect" class="danger">Disconnect</button></div>`
+         <div class="toolbar"><button id="g-sync">Sync now</button><button id="g-reconnect">Reconnect</button><button id="g-disconnect" class="danger">Disconnect</button></div>`
       : `<div class="small"><b>Step 1.</b> Google OAuth client file: ${g.has_client_secret
             ? '<span class="state set">✓ uploaded</span>'
             : '<span style="color:var(--bad)">needed before you can connect</span>'}</div>
@@ -140,6 +166,7 @@ function renderGmailBox() {
     if (!S.gmail.has_client_secret) { toast("Do step 1 first: get the Google OAuth client file using the setup guide below, then choose it above.", true); return openGuide(); }
     connectGmail(e.target);
   });
+  $("#g-reconnect")?.addEventListener("click", (e) => connectGmail(e.target));
   $("#g-sync")?.addEventListener("click", (e) => busy(e.target, "Syncing…", async () => {
     const s = await api("/api/gmail/sync", { method: "POST" }); toast(`${s.new} new, ${s.updated} updated, ${s.triaged} sorted`);
     await loadGmailStatus(); updateMailBadge();
@@ -200,7 +227,7 @@ $("#prefs-form").addEventListener("submit", async (e) => {
   catch (err) { toast(err.message, true); }
 });
 
-function renderAppSettings() { fillForm($("#ai-form"), S.settings.app); fillForm($("#app-form"), S.settings.app); }
+function renderAppSettings() { fillForm($("#ai-form"), S.settings.app); fillForm($("#app-form"), S.settings.app); applyA11y(S.settings.app); }
 
 // ---- settings subtabs (Integrations / AI Settings / Profile) -------------
 function selectSettingsSubtab(name) {
@@ -238,6 +265,8 @@ async function loadLocalModel() {
 }
 
 function lmTier(id) { return (S.localModel?.tiers || []).find((t) => t.id === id); }
+// The tier that would actually answer a score right now: the running server, else the user's chosen tier.
+function lmTierId() { return S.localModel ? (S.localModel.server?.running ? S.localModel.server.tier : S.localModel.selection) : null; }
 
 function renderLocalModel() {
   const s = S.localModel; if (!s) return;
@@ -255,7 +284,8 @@ function renderLocalModel() {
       t.running ? '<span class="badge">running</span>' : t.selected ? '<span class="badge gray">installed</span>' : "",
     ].join(" ");
     const btn = t.running ? "" : `<button data-lm="${t.id}">${t.installed ? "Use this" : `Install · ${t.gb} GB`}</button>`;
-    const want = t.min_vram ? `best with ${t.min_ram} GB RAM or ${t.min_vram} GB GPU memory` : `best with ${t.min_ram}+ GB RAM`;
+    const join = t.gate === "and" ? "and" : "or";
+    const want = t.min_vram ? `best with ${t.min_ram} GB RAM ${join} ${t.min_vram} GB GPU memory` : `best with ${t.min_ram}+ GB RAM`;
     return `<div class="lm-tier${t.selected ? " sel" : ""}"><div><b>${t.label}</b> ${badges}` +
       `<div class="small muted">${esc(t.blurb)} · ${want}</div></div>${btn}</div>`;
   }).join("");
@@ -403,10 +433,16 @@ function updateSiteLinks() { $$("a[data-site]").forEach((a) => { a.href = siteUr
 
 // ---------- jobs ----------
 async function loadJobs() {
-  const params = new URLSearchParams({ status: $("#f-status").value, sort: $("#f-sort").value, q: $("#f-q").value, show_hidden: $("#f-hidden").checked });
+  const archived = $("#f-archived").checked;
+  $("#f-status").disabled = $("#f-sort").disabled = archived; // the Archived view has its own order
+  const params = new URLSearchParams({ status: archived ? "archived" : $("#f-status").value, sort: $("#f-sort").value, q: $("#f-q").value, show_hidden: $("#f-hidden").checked });
+  const [smin, smax] = scoreRange();
+  if (smin != null) params.set("score_min", smin);
+  if (smax != null) params.set("score_max", smax);
   const data = await api("/api/jobs?" + params);
   S.jobs = data.jobs; S.unscored = data.unscored || 0;
   $("#hidden-count").textContent = data.hidden_count ? `(${data.hidden_count})` : "";
+  $("#archived-count").textContent = data.archived_count ? `(${data.archived_count})` : "";
   const cap = +(S.settings?.preferences?.ai_score_max_per_run || 15); // Claude Code batches its one session to `cap`
   $("#score-batch").textContent = ccMode()
     ? (S.unscored > cap ? `✨ Score the top ${cap} of ${S.unscored} new jobs with the AI Agent`
@@ -418,23 +454,27 @@ async function loadJobs() {
   $("#counts").textContent = order.filter((k) => c[k]).map((k) => `${k.replace("_", " ")}: ${c[k]}`).join(" · ") || "No jobs yet. Click “Check for jobs now”.";
   renderJobList();
 }
+const STATUS_TINT = { applied: "st-applied", interview: "st-interview", offer: "st-offer" };
+const STATUS_EMOJI = { applied: "🚀 ", interview: "✨ ", offer: "🎉 " };
 function renderJobList() {
   $("#job-list").innerHTML = S.jobs.map((j) => `
-    <li data-id="${j.id}" class="${S.currentJob?.id === j.id ? "active" : ""} ${isHidden(j) ? "is-hidden" : ""}">
+    <li data-id="${j.id}" class="${S.currentJob?.id === j.id ? "active" : ""} ${isHidden(j) ? "is-hidden" : ""} ${STATUS_TINT[j.status] || ""}">
       <div class="t">${esc(j.title)}</div>
       <div class="score">${scorePill(j)}</div>
       <div class="meta">${esc(j.company || "Unknown company")} · ${esc(j.publisher || j.source)}${j.is_remote ? " · Remote" : ""}${salary(j) ? " · " + esc(salary(j)) : ""}</div>
-      <div class="meta">${j.status !== "new" ? `<span class="badge gray">${esc(j.status)}</span> ` : ""}${isHidden(j) ? '<span class="badge gray">hidden</span> ' : ""}${j.posted_at ? "posted " + esc(fmtDate(j.posted_at)) + " · " : ""}found ${esc(ago(j.found_at))}${j.has_tailored ? " · resume ✓" : ""}${j.has_cover ? " · letter ✓" : ""}</div>
-      ${j.status === "dismissed" ? "" : j.is_hidden ? `<button class="row-hide" data-unhide="${j.id}" title="Show this job in the list again">Unhide</button>`
+      <div class="meta">${j.status !== "new" ? `<span class="badge gray"><span aria-hidden="true">${STATUS_EMOJI[j.status] || ""}</span>${esc(j.status)}</span> ` : ""}${j.scored_by ? `<span class="badge gray" title="Scored by ${esc(j.scored_by)}">${esc(String(j.scored_by).replace("Built-in ", ""))}</span> ` : ""}${isHidden(j) ? '<span class="badge gray">hidden</span> ' : ""}${j.archived_at ? `<span class="badge gray">gone in ${archivedDaysLeft(j)}d</span> ` : ""}${j.posted_at ? "posted " + esc(fmtDate(j.posted_at)) + " · " : ""}found ${esc(ago(j.found_at))}${j.has_tailored ? " · resume ✓" : ""}${j.has_cover ? " · letter ✓" : ""}</div>
+      ${j.archived_at ? "" : j.status === "dismissed" ? "" : j.is_hidden ? `<button class="row-hide" data-unhide="${j.id}" title="Show this job in the list again">Unhide</button>`
         : `<button class="row-hide" data-hide="${j.id}" title="Hide from the list (Show hidden brings it back)">Hide</button>`}
     </li>`).join("");
-  $$("#job-list li").forEach((li) => li.addEventListener("click", () => openJob(+li.dataset.id)));
+  keyActivate($$("#job-list li"), (li) => openJob(+li.dataset.id));
   $$("#job-list [data-hide], #job-list [data-unhide]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation(); setHidden(+(b.dataset.hide || b.dataset.unhide), !!b.dataset.hide);
   }));
 }
-["#f-status", "#f-sort", "#f-hidden"].forEach((s) => $(s).addEventListener("change", loadJobs));
-const isHidden = (j) => !!j.is_hidden; // hidden by you, dismissed, or a new job the AI scored below your cutoff
+// Days until an archived job is deleted for good (the server purges 5 days after archiving it).
+const archivedDaysLeft = (j) => Math.max(0, 5 - Math.floor((Date.now() - new Date(j.archived_at)) / 864e5));
+["#f-status", "#f-sort", "#f-hidden", "#f-archived"].forEach((s) => $(s).addEventListener("change", loadJobs));
+const isHidden = (j) => !!j.is_hidden; // hidden by you, or dismissed
 // Hide / Unhide: hidden jobs stay in the database (scores, letters, emails) but leave the list until "Show hidden".
 async function setHidden(id, hidden) {
   await api(`/api/jobs/${id}`, { method: "PATCH", body: { hidden } });
@@ -443,6 +483,21 @@ async function setHidden(id, hidden) {
   toast(hidden ? "Hidden. Tick “Show hidden” to see it again." : "Back in your list");
 }
 let qTimer; $("#f-q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(loadJobs, 300); });
+
+// Score range filter: slider and number box stay in sync; number empty (slider at its extreme) = that end is off.
+function scoreRange() {
+  const num = (el) => el.value === "" ? null : Math.max(0, Math.min(100, Math.round(+el.value || 0)));
+  return [num($("#f-score-min")), num($("#f-score-max"))];
+}
+function wireRange(sliderSel, numSel, extreme) {
+  const sl = $(sliderSel), nb = $(numSel);
+  let t;
+  const push = () => { clearTimeout(t); t = setTimeout(loadJobs, 250); };
+  sl.addEventListener("input", () => { const v = +sl.value; nb.value = v === extreme ? "" : v; push(); });
+  nb.addEventListener("input", () => { const v = nb.value === "" ? null : Math.max(0, Math.min(100, Math.round(+nb.value || 0))); sl.value = v == null ? extreme : v; push(); });
+}
+wireRange("#s-score-min", "#f-score-min", 0);
+wireRange("#s-score-max", "#f-score-max", 100);
 
 async function openJob(id) {
   S.currentJob = await api(`/api/jobs/${id}`);
@@ -470,6 +525,7 @@ function renderJob() {
         ${j.employment_type ? `<span class="badge gray">${esc(j.employment_type)}</span>` : ""}
         ${salary(j) ? `<span class="badge gray">${esc(salary(j))}</span>` : ""}
         <span class="badge gray">via ${esc(j.publisher || j.source)}</span>
+        ${j.scored_by ? `<span class="badge gray" title="Model that produced the AI score">scored by ${esc(j.scored_by)}</span>` : ""}
         ${j.posted_at ? `<span class="badge gray">posted ${esc(fmtDate(j.posted_at))}</span>` : ""}
       </div>
       <div class="toolbar">
@@ -480,11 +536,15 @@ function renderJob() {
         ${j.status !== "dismissed" ? '<button id="j-dismiss" title="Not interested: sets the status to dismissed and hides it">Dismiss</button>' : ""}
         <button id="j-remove" class="danger" title="Delete this job and never fetch it again">Remove</button>
       </div>
+      ${!ccMode() && ["light", "medium"].includes(lmTierId()) ? `
+      <div class="score-ctx">
+        <textarea id="j-score-ctx" rows="2" placeholder="Optional: tell the AI what a previous score got wrong (e.g. &quot;I DO have AWS experience - see my Redox role&quot;) and Re-score with the AI Agent for a smarter second pass."></textarea>
+      </div>` : ""}
     </div>
 
     ${j.ai_summary ? `
     <div class="ai-box">
-      <div><b>AI Agent: ${Math.round(j.ai_score)}/100</b> ${esc(j.ai_summary)}</div>
+      <div><b>AI Agent: ${Math.round(j.ai_score)}/100</b>${j.scored_by ? ` <span class="muted small">(${esc(j.scored_by)})</span>` : ""} ${esc(j.ai_summary)}</div>
       <div class="cols">
         <div><b class="small">Strengths</b><ul>${j.ai_strengths.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
         <div><b class="small">Gaps</b><ul>${j.ai_gaps.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>
@@ -527,7 +587,18 @@ function renderJob() {
   $("#j-score").addEventListener("click", (e) => ccMode() ? openClaudeCode({
     title: `Claude Code: score ${j.title}`, request: { kind: "score", job_id: j.id },
     onResult: async () => { await openJob(j.id); await loadJobs(); toast("Score saved from Claude Code"); },
-  }) : busy(e.target, "Scoring…", async () => { await api(`/api/jobs/${j.id}/score`, { method: "POST" }); await openJob(j.id); }));
+  }) : busy(e.target, "Scoring…", async () => {
+    const ctx = $("#j-score-ctx")?.value?.trim();
+    await api(`/api/jobs/${j.id}/score`, { method: "POST", body: ctx ? { context: ctx } : {} });
+    await openJob(j.id);
+    toast(ctx ? "Re-scored with your notes" : "Scored");
+  }));
+  const ctxEl = $("#j-score-ctx"); // draft notes survive re-renders while the job stays open in this session
+  if (ctxEl) {
+    S.scoreCtx = S.scoreCtx || {};
+    ctxEl.value = S.scoreCtx[j.id] || "";
+    ctxEl.addEventListener("input", () => { S.scoreCtx[j.id] = ctxEl.value; });
+  }
   // One button per task: Settings > "AI Agent runs in" decides who does the work (Claude Code panel, or a direct call).
   $("#k-tailor").addEventListener("click", (e) => ccMode() ? openClaudeCode({
     title: `Claude Code: tailor resume for ${j.title}`, request: { kind: "tailor", job_id: j.id },
@@ -706,7 +777,7 @@ async function loadMail() {
   $("#sort-batch").classList.toggle("hidden", !(ccMode() && un));
   $("#thread-list").innerHTML = threads.map(threadItem).join("") ||
     `<li class="muted">No job-related email ${$("#m-view").value === "all" ? "found yet. Click Refresh, or widen the Gmail search in Settings." : "in this view."}</li>`;
-  $$("#thread-list li[data-tid]").forEach((li) => li.addEventListener("click", () => openThread(li.dataset.tid)));
+  keyActivate($$("#thread-list li[data-tid]"), (li) => openThread(li.dataset.tid));
 }
 $("#m-view").addEventListener("change", loadMail);
 let mqTimer; $("#m-q").addEventListener("input", () => { clearTimeout(mqTimer); mqTimer = setTimeout(loadMail, 300); });
@@ -954,6 +1025,7 @@ async function loadActivity() {
   const s = await updateRunStatus(); if (!s) return;
   const r = s.last_result;
   $("#last-run").innerHTML = r ? `<b>Last run:</b> ${r.fetched} fetched · ${r.passed_filters} passed filters · ${r.new} new · ${r.ai_scored} AI-scored` +
+    (r.archived || r.purged ? ` · ${r.archived || 0} archived${r.purged ? `, ${r.purged} purged` : ""} (60-day rule)` : "") +
     (Object.keys(r.by_source || {}).length ? `<br>${Object.entries(r.by_source).map(([k, v]) => `${esc(k)}: ${v.fetched} fetched, ${v.new} new`).join(" · ")}` : "") +
     (r.errors.length ? `<br><span style="color:var(--bad)">${r.errors.map(esc).join("<br>")}</span>` : "") : "No runs yet this session.";
   $("#activity-list").innerHTML = s.activity.map((a) => `<li class="${esc(a.level)}">${esc(new Date(a.at).toLocaleString())}  ${esc(a.message)}</li>`).join("");
@@ -964,7 +1036,7 @@ async function loadResumes(selectId) {
   S.resumes = await api("/api/resumes");
   S.hasResume = S.resumes.length > 0; renderBanner();
   $("#resume-list").innerHTML = S.resumes.map((r) => `<li data-id="${r.id}" class="${S.currentResume?.id === r.id ? "active" : ""}"><span>${esc(r.name)}</span>${r.is_master ? '<span class="badge">Master</span>' : ""}</li>`).join("") || '<li class="muted">None yet</li>';
-  $$("#resume-list li[data-id]").forEach((li) => li.addEventListener("click", () => openResume(+li.dataset.id)));
+  keyActivate($$("#resume-list li[data-id]"), (li) => openResume(+li.dataset.id));
   const id = selectId || S.currentResume?.id || S.resumes[0]?.id;
   if (id) await openResume(id); else showResume(null);
 }

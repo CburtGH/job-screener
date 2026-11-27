@@ -80,6 +80,22 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
 
 
+def engine_label() -> str:
+    """Display name of the engine that answers AI calls right now, recorded per job as scored_by."""
+    s = config.get_app_settings()
+    eng = str(s.get("ai_engine", ""))
+    if eng == "claude_code":
+        return "Claude Code"
+    if eng.startswith("local"):
+        if eng == "local_builtin":
+            from . import local_model
+            tid = local_model.current_tier()
+            return f"Built-in {local_model.TIERS[tid]['label']}" if tid in local_model.TIERS else "Built-in model"
+        _url, model = config.active_llm(s)
+        return f"External LLM ({model})" if model else "External LLM"
+    return "Claude"
+
+
 def _call(schema: type[BaseModel], system_parts: list[str], user: str, cache_last_system: bool = True,
           effort: str | None = None) -> BaseModel:
     """Every Claude / local LLM call goes through here; each one is recorded in the debug viewer's Network tab."""
@@ -291,20 +307,37 @@ SCORING_SYSTEM = (
     "Judge only from the resume: a strength may state nothing the resume itself does not show - name the real "
     "role, project, skill or number behind it. If the resume never mentions a requirement, it is a gap; never "
     "credit a skill just because the posting repeats it, and never invent experience, employers, dates or tools. "
-    "Weigh: required skills the candidate has, seniority fit (the candidate wants junior / Software Engineer I "
-    "or senior production support roles unless preferences say otherwise), remote eligibility, and any hard "
-    "requirements they clearly lack (clearances, licenses, years of experience far beyond theirs). "
-    "If a must-have requirement is missing from the resume, score the posting below 50 even if everything else fits. "
+    "Separate HARD requirements (a clearance, license or legal minimum; a stated minimum of years; a specific "
+    "system, software, machine, tool or platform the person must operate from day one) from NICE-TO-HAVEs "
+    "('preferred', 'bonus', 'familiarity with'). Any industry: the equivalent of a named hard requirement is "
+    "whatever that job must actually be done with. Experience on a similar but different system, tool or "
+    "platform counts as PARTIAL evidence of a hard requirement, not as its absence: the real adjacent skill "
+    "belongs in strengths, the naming mismatch belongs in gaps, and listing both is normal, not a "
+    "contradiction. A hard requirement covered only by an adjacent equivalent lands around 55-75; score below "
+    "50 only when a hard requirement is missing entirely with nothing adjacent to build on. "
+    "Also weigh seniority fit against the candidate's preferences (default: junior-level), remote eligibility, "
+    "and stated salary, schedule or shift conditions versus what the candidate wants - a mismatch there is a "
+    "gap to flag, not by itself a reason for a sub-50 score. "
     "Strengths and gaps: 2-5 short bullet phrases each, concrete and specific to this posting. "
     "Summary: one or two sentences a busy person can act on."
 )
 
 
-def score_job(job: dict, resume_md: str, prefs: dict) -> MatchResult:
+def score_job(job: dict, resume_md: str, prefs: dict, context: str | None = None) -> MatchResult:
     pref_text = json.dumps({k: prefs.get(k) for k in ("target_titles", "remote_only", "keywords_boost", "min_salary", "employment_types")})
+    system = [SCORING_SYSTEM, _resume_block(resume_md)]
+    # Optional second-pass guidance: the user noted what a previous score got wrong so the model can course-correct.
+    if context and context.strip():
+        system.append(
+            "REVISION NOTES from the candidate about a previous score for this exact job. The candidate believes "
+            "that pass was wrong or missed something. Weigh these notes only as pointers back to the resume - the "
+            "resume is still the only source of truth, and you must not invent anything the resume does not show. "
+            "Recheck the specific points raised and correct the score, strengths and gaps if the resume supports it.\n"
+            f"<revision_notes>{context.strip()[:2000]}</revision_notes>"
+        )
     return _call(
         MatchResult,
-        [SCORING_SYSTEM, _resume_block(resume_md)],
+        system,
         f"<preferences>{pref_text}</preferences>\n\n{_job_block(job)}",
         effort="low",
     )
