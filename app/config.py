@@ -48,8 +48,6 @@ DEFAULT_PREFERENCES = {
     "min_keyword_score": 15,        # jobs below this are stored with status 'low_match'
     "ai_score_enabled": True,
     "ai_score_max_per_run": 15,     # cap per run for the Anthropic API engine (the local LLM scores every job)
-    "hide_below_score": 70,         # new jobs Claude scored below this are hidden (0 = never)
-    "hide_below_keyword_score": 30, # new jobs not yet scored by Claude, with a keyword score below this, are hidden
     "enabled_sources": ["jsearch", "remotive", "remoteok", "himalayas"],
 }
 

@@ -436,6 +436,9 @@ async function loadJobs() {
   const archived = $("#f-archived").checked;
   $("#f-status").disabled = $("#f-sort").disabled = archived; // the Archived view has its own order
   const params = new URLSearchParams({ status: archived ? "archived" : $("#f-status").value, sort: $("#f-sort").value, q: $("#f-q").value, show_hidden: $("#f-hidden").checked });
+  const [smin, smax] = scoreRange();
+  if (smin != null) params.set("score_min", smin);
+  if (smax != null) params.set("score_max", smax);
   const data = await api("/api/jobs?" + params);
   S.jobs = data.jobs; S.unscored = data.unscored || 0;
   $("#hidden-count").textContent = data.hidden_count ? `(${data.hidden_count})` : "";
@@ -471,7 +474,7 @@ function renderJobList() {
 // Days until an archived job is deleted for good (the server purges 5 days after archiving it).
 const archivedDaysLeft = (j) => Math.max(0, 5 - Math.floor((Date.now() - new Date(j.archived_at)) / 864e5));
 ["#f-status", "#f-sort", "#f-hidden", "#f-archived"].forEach((s) => $(s).addEventListener("change", loadJobs));
-const isHidden = (j) => !!j.is_hidden; // hidden by you, dismissed, or a new job the AI scored below your cutoff
+const isHidden = (j) => !!j.is_hidden; // hidden by you, or dismissed
 // Hide / Unhide: hidden jobs stay in the database (scores, letters, emails) but leave the list until "Show hidden".
 async function setHidden(id, hidden) {
   await api(`/api/jobs/${id}`, { method: "PATCH", body: { hidden } });
@@ -480,6 +483,21 @@ async function setHidden(id, hidden) {
   toast(hidden ? "Hidden. Tick “Show hidden” to see it again." : "Back in your list");
 }
 let qTimer; $("#f-q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(loadJobs, 300); });
+
+// Score range filter: slider and number box stay in sync; number empty (slider at its extreme) = that end is off.
+function scoreRange() {
+  const num = (el) => el.value === "" ? null : Math.max(0, Math.min(100, Math.round(+el.value || 0)));
+  return [num($("#f-score-min")), num($("#f-score-max"))];
+}
+function wireRange(sliderSel, numSel, extreme) {
+  const sl = $(sliderSel), nb = $(numSel);
+  let t;
+  const push = () => { clearTimeout(t); t = setTimeout(loadJobs, 250); };
+  sl.addEventListener("input", () => { const v = +sl.value; nb.value = v === extreme ? "" : v; push(); });
+  nb.addEventListener("input", () => { const v = nb.value === "" ? null : Math.max(0, Math.min(100, Math.round(+nb.value || 0))); sl.value = v == null ? extreme : v; push(); });
+}
+wireRange("#s-score-min", "#f-score-min", 0);
+wireRange("#s-score-max", "#f-score-max", 100);
 
 async function openJob(id) {
   S.currentJob = await api(`/api/jobs/${id}`);

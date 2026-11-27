@@ -287,11 +287,22 @@ hidden_sql = monitor.hidden_sql  # one definition, shared with the "Score new jo
 
 
 @app.get("/api/jobs")
-def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: int = 300, show_hidden: bool = False):
+def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: int = 300, show_hidden: bool = False,
+              score_min: int | None = None, score_max: int | None = None):
     where, args = [], []
     archived_only = status == "archived"
     # Archived (60-day rule) jobs live in their own view; nothing else ever shows them.
     where.append("archived_at IS NOT NULL" if archived_only else "archived_at IS NULL")
+    # Score range applies to the number the list shows: AI score, or keyword score until it exists.
+    if score_min is not None or score_max is not None:
+        shown = "COALESCE(ai_score, keyword_score)"
+        where.append(f"{shown} IS NOT NULL")
+        if score_min is not None:
+            where.append(f"{shown} >= ?")
+            args.append(score_min)
+        if score_max is not None:
+            where.append(f"{shown} <= ?")
+            args.append(score_max)
     # Hidden jobs stay out of the list unless "Show hidden" is on, or the status filter asks for dismissed jobs.
     hidden_sql_ = hidden_sql()
     if not show_hidden and status != "dismissed" and not archived_only:
@@ -351,8 +362,8 @@ def patch_job(jid: int, values: dict):
     values = {k: v for k, v in values.items() if k in EDITABLE_JOB_FIELDS}
     if "resume_changes" in values:
         values["resume_changes"] = json.dumps([str(x) for x in (values["resume_changes"] or [])])
-    if "hidden" in values:  # Unhide is sticky (-1), so a low score doesn't hide it again
-        values["hidden"] = 1 if values["hidden"] else -1
+    if "hidden" in values:  # 1 = user hid it, 0 = visible (legacy -1 rows read as visible)
+        values["hidden"] = 1 if values["hidden"] else 0
     if not values:
         return _get_job(jid)
     if values.get("status") == "applied":

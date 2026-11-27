@@ -278,6 +278,12 @@ label.wai:has(input:checked) { border-color: var(--accent); background: var(--ac
 label.wai .wai-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 label.wai .wai-body input, label.wai .wai-body select { flex: 1 1 220px; }
 
+/* ---- score range filter (jobs toolbar) ---- */
+.score-range { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.range-ctl { display: inline-flex; align-items: center; gap: 4px; }
+.range-ctl input[type=range] { width: 84px; }
+.range-ctl .range-num { width: 48px; text-align: center; }
+
 /* ---- accessibility (Settings > Accessibility; ON TOP of native OS a11y) ---- */
 /* Text size: scale the whole UI without breaking layout (root font stays put). */
 body.text-large { font-size: 112.5%; }

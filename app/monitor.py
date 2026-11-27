@@ -88,22 +88,9 @@ def archive_stale() -> tuple[int, int]:
 
 def hidden_sql() -> str:
     """SQL condition for jobs kept out of the list unless "Show hidden" is on:
-      - the user hid it (hidden = 1), or it's dismissed;
-      - a new job Claude scored below hide_below_score (default 70);
-      - a new job Claude hasn't scored, with a keyword score below hide_below_keyword_score (default 30).
-    A Claude score, when there is one, decides on its own (a strong Claude score beats a weak keyword match).
-    Unhide sets hidden = -1, which exempts the job from both score rules. Either cutoff at 0 turns that rule off.
-    Reads preferences (its own db connection): call it before taking the db lock."""
-    prefs = config.get_preferences()
-    ai_cut = float(prefs.get("hide_below_score") or 0)
-    kw_cut = float(prefs.get("hide_below_keyword_score") or 0)
-    rules = []
-    if ai_cut > 0:
-        rules.append(f"(ai_score IS NOT NULL AND ai_score < {ai_cut:g})")
-    if kw_cut > 0:
-        rules.append(f"(ai_score IS NULL AND COALESCE(keyword_score, 0) < {kw_cut:g})")
-    low = f" OR (hidden = 0 AND status = 'new' AND ({' OR '.join(rules)}))" if rules else ""
-    return f"(hidden = 1 OR status = 'dismissed'{low})"
+    the user clicked Hide (hidden = 1) or dismissed the job. (Score-threshold auto-hiding was
+    dropped in favour of the score range filter on the Jobs tab - every job stays visible by default.)"""
+    return "(hidden = 1 OR status = 'dismissed')"
 
 
 def unscored_jobs(limit: int | None = None) -> list[dict]:

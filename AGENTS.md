@@ -187,9 +187,10 @@ Job statuses: `new`, `saved`, `applying`, `applied`, `interview`, `offer`, `reje
 
 **Hidden jobs** stay in the database but leave the list until the user ticks "Show hidden".
 `monitor.hidden_sql()` is the single definition (the list, the counts and the "Score new jobs" batch all use it):
-`jobs.hidden = 1` (user clicked Hide), status `dismissed`, or a `new` job whose `ai_score` is below
-`hide_below_score` (default 70), or, when the AI hasn't scored it, whose `keyword_score` is below
-`hide_below_keyword_score` (default 30). Unhide sets `hidden = -1`, which exempts the job from both score rules. **Removed jobs** are deleted and recorded in `removed_jobs`;
+`jobs.hidden = 1` (user clicked Hide) or status `dismissed`. Score-threshold auto-hiding was **removed**
+(`hide_below_score` / `hide_below_keyword_score` are gone): instead the Jobs toolbar has a score range filter
+(`score_min` / `score_max` query params on `GET /api/jobs`, applied to `COALESCE(ai_score, keyword_score)` —
+the number the list pill shows). **Removed jobs** are deleted and recorded in `removed_jobs`;
 `monitor._insert` skips any posting matching one (same source+external_id, or same dedupe_key from any source).
 Pasting a job into Add a job deliberately bypasses that.
 
@@ -315,7 +316,7 @@ so it never auto-opens again.
 **Preferences** (`config.DEFAULT_PREFERENCES`, the Preferences tab): `target_titles`, `title_must_include_any`,
 `title_role_any`, `title_exclude`, `keywords_boost`, `keywords_exclude`, `remote_only`, `locations`, `country`,
 `employment_types`, `min_salary`, `posted_within_days`, `min_keyword_score`, `ai_score_enabled`,
-`ai_score_max_per_run`, `hide_below_score`, `hide_below_keyword_score`, `enabled_sources`.
+`ai_score_max_per_run`, `enabled_sources`.
 
 **App settings** (`config.DEFAULT_APP_SETTINGS`, the Settings tab): `model`, `effort`, `refresh_on_startup`,
 `applicant_name`, `applicant_email`, `applicant_phone`, `applicant_location`, `applicant_links`,
