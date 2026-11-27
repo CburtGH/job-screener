@@ -11,7 +11,7 @@
 <body>
   <header class="topbar">
     <div class="brand">JobScout</div>
-    <nav id="tabs">
+    <nav id="tabs" aria-label="Main sections">
       <button data-tab="jobs" class="active">Jobs</button>
       <button data-tab="mail">Mail <span id="mail-badge" class="count-badge hidden"></span></button>
       <button data-tab="resume">Resume</button>
@@ -311,6 +311,13 @@
         <label class="check"><input type="checkbox" name="refresh_on_startup"> Check jobs and sync Gmail once when JobScout opens</label>
         <label>Gmail sync window (days) <input name="gmail_days" type="number" min="7" max="365"></label>
         <label class="span2">Gmail search for job mail <span class="hint">Gmail search syntax; empty = built-in default (shown as placeholder)</span><textarea name="gmail_query" rows="3" id="gmail-query"></textarea></label>
+        <h2 class="span2">Accessibility <span class="hint">JobScout also follows Windows automatically: system text zoom, screen readers, Windows high-contrast themes (forced colors) and reduced motion. These switches add to that, just for this app.</span></h2>
+        <label>Text size <span class="hint">scales the whole window, including the job list and previews</span>
+          <select name="a11y_text_size"><option value="normal">Normal</option><option value="large">Large</option><option value="largest">Largest</option></select></label>
+        <label class="check">High contrast <span class="hint">darker text, stronger borders, no shadows — overrides the light/dark theme</span>
+          <input type="checkbox" name="a11y_high_contrast"></label>
+        <label class="check">Reduce motion <span class="hint">turns off all animations and transitions (Windows Settings > Accessibility > Visual effects does this system-wide)</span>
+          <input type="checkbox" name="a11y_reduce_motion"></label>
         <h2 class="span2">Diagnostics</h2>
         <label class="check"><input type="checkbox" name="debug_panel"> Show the debug panel (Console / Network) at the bottom</label>
         <label>Log level
@@ -536,7 +543,7 @@
     </div>
   </dialog>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="/static/vendor/xterm/xterm.js"></script>
   <script src="/static/vendor/xterm/addon-fit.js"></script>
   <script src="/static/app.js"></script>

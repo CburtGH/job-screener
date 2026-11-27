@@ -216,7 +216,7 @@ raise `SourceError` for config problems, register it in `SOURCES`, and mention i
 |---|---|
 | `kv` | JSON key/values: `preferences`, `app_settings`, `gmail_account`, `gmail_last_sync`, `last_fetch:<source>`, `jsearch_channel` |
 | `resumes` | Markdown resumes; exactly one `is_master` |
-| `jobs` | Postings plus scores, Claude summary/strengths/gaps, tailored resume, cover letter, notes, status, 60-day archive timestamp (`archived_at`) |
+| `jobs` | Postings plus scores, Claude summary/strengths/gaps, tailored resume, cover letter, notes, status, 60-day archive timestamp (`archived_at`), scoring engine label (`scored_by`, from `ai.engine_label()`) |
 | `email_threads` | Gmail thread metadata, job link (`link_manual` = user-set), Claude triage fields |
 | `removed_jobs` | Jobs the user removed (source, external_id, dedupe_key, title, company); never re-fetched |
 | `activity` | Activity log (last 500 rows) |
@@ -321,7 +321,10 @@ so it never auto-opens again.
 `applicant_name`, `applicant_email`, `applicant_phone`, `applicant_location`, `applicant_links`,
 `cover_letter_tone`, `tailoring_rules`, `gmail_days`, `gmail_query`, `email_signature`,
 `claude_code_enabled`, `claude_code_path`, `debug_panel`, `log_level`, `ai_engine`, `local_llm_url`,
-`local_llm_model`, `builtin_model`, `local_llm_wait`. Two of them default per environment (`config.apply_env_defaults()`):
+`local_llm_model`, `builtin_model`, `local_llm_wait`, `a11y_text_size` (normal/large/largest),
+`a11y_high_contrast`, `a11y_reduce_motion`. The three `a11y_*` keys toggle body classes in
+`static/app.js` (`applyA11y`) on top of native OS accessibility (Windows text zoom, forced-colors high-contrast
+themes, reduced-motion — all respected automatically by CSS media queries). Two of them default per environment (`config.apply_env_defaults()`):
 `refresh_on_startup` on in production / off in staging, `debug_panel` the other way; each instance resets them
 once at startup and after "copy production data into staging" (`env_tools`), later user edits stick.
 

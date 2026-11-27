@@ -91,6 +91,12 @@ DEFAULT_APP_SETTINGS = {
     "debug_panel": IS_STAGING,      # show the Console/Network debug panel at the bottom of the window
     "log_level": "INFO",            # DEBUG also records every outbound call in the log file
     "claude_code_path": "",         # path to claude.exe for the embedded Claude Code panel; empty = auto-detect
+    # Accessibility: these sit ON TOP of the OS (Windows text size, Narrator/NVDA, system high contrast and
+    # reduced motion all work by themselves via forced-colors / prefers-* media queries). The app-level
+    # switches here are for users who want more without touching the whole system.
+    "a11y_text_size": "normal",     # normal | large | largest (zooms the whole UI)
+    "a11y_high_contrast": False,    # stronger colours and borders regardless of the OS theme
+    "a11y_reduce_motion": False,    # kill animations/transitions even when the OS allows them
 }
 
 
