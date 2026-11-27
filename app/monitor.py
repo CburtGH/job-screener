@@ -44,13 +44,15 @@ def ai_score_job(job_id: int, context: str | None = None) -> dict:
     return res.model_dump()
 
 
-def save_score(job_id: int, res: ai.MatchResult) -> None:
-    """Store a Claude match score (from the API or from a Claude Code scoring session)."""
+def save_score(job_id: int, res: ai.MatchResult, scorer: str | None = None) -> None:
+    """Store a Claude match score (from the API or from a Claude Code scoring session).
+    scored_by records which engine produced it (ai.engine_label(), or an explicit override)."""
     score = max(0, min(100, int(res.score)))
     with db.conn() as c:
         c.execute(
-            "UPDATE jobs SET ai_score=?, ai_summary=?, ai_strengths=?, ai_gaps=? WHERE id=?",
-            (score, f"[{res.recommendation.upper()}] {res.summary}", json.dumps(res.strengths), json.dumps(res.gaps), job_id),
+            "UPDATE jobs SET ai_score=?, ai_summary=?, ai_strengths=?, ai_gaps=?, scored_by=? WHERE id=?",
+            (score, f"[{res.recommendation.upper()}] {res.summary}", json.dumps(res.strengths), json.dumps(res.gaps),
+             scorer or ai.engine_label(), job_id),
         )
 
 

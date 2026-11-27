@@ -308,7 +308,7 @@ def list_jobs(status: str = "active", q: str = "", sort: str = "best", limit: in
         where.append("(title LIKE ? OR company LIKE ? OR description LIKE ?)")
         args += [f"%{q}%"] * 3
     sql = ("SELECT id, source, title, company, location, is_remote, employment_type, salary_text, salary_min, salary_max, "
-           "publisher, posted_at, found_at, status, keyword_score, ai_score, ai_summary, url, apply_url, "
+           "publisher, posted_at, found_at, status, keyword_score, ai_score, ai_summary, scored_by, url, apply_url, "
            f"cover_letter IS NOT NULL AS has_cover, tailored_resume IS NOT NULL AS has_tailored, hidden, archived_at, "
            f"{hidden_sql_} AS is_hidden FROM jobs")
     if where:
@@ -728,7 +728,7 @@ def _apply_result(s) -> dict:
                 item.setdefault("is_remote", False)
                 item.setdefault("strengths", [])
                 item.setdefault("gaps", [])
-                monitor.save_score(jid, _fields(ai.MatchResult, item))
+                monitor.save_score(jid, _fields(ai.MatchResult, item), scorer="Claude Code")
                 saved += 1
             except (TypeError, ValueError) as e:
                 problems.append(f"job {item.get('job_id')}: {_first_line(e)}")

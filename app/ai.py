@@ -80,6 +80,22 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
 
 
+def engine_label() -> str:
+    """Display name of the engine that answers AI calls right now, recorded per job as scored_by."""
+    s = config.get_app_settings()
+    eng = str(s.get("ai_engine", ""))
+    if eng == "claude_code":
+        return "Claude Code"
+    if eng.startswith("local"):
+        if eng == "local_builtin":
+            from . import local_model
+            tid = local_model.current_tier()
+            return f"Built-in {local_model.TIERS[tid]['label']}" if tid in local_model.TIERS else "Built-in model"
+        _url, model = config.active_llm(s)
+        return f"External LLM ({model})" if model else "External LLM"
+    return "Claude"
+
+
 def _call(schema: type[BaseModel], system_parts: list[str], user: str, cache_last_system: bool = True,
           effort: str | None = None) -> BaseModel:
     """Every Claude / local LLM call goes through here; each one is recorded in the debug viewer's Network tab."""

@@ -277,6 +277,13 @@ def model_id() -> str | None:
         return None
 
 
+def current_tier() -> str | None:
+    """The tier that answers AI calls right now: the running managed server's, else the user's chosen tier."""
+    if _server["tier"] and running():
+        return _server["tier"]
+    return _kv().get("tier")
+
+
 def start_server(tid: str, apply_engine: bool = False) -> str | None:
     """Bring up the managed llama-server for an installed tier. When apply_engine, the tier also becomes
     the Settings choice (local LLM pointed at the managed URL). Returns an error string, or None once started."""
